@@ -144,10 +144,11 @@ unsigned long TOF_distance = 0;
 unsigned char TOF_signal = 0;
 
 BLEService servo_service("19B10000-E8F2-537E-4F6C-D104768A1214"); // Bluetooth® Low Energy LED Service
-
+BLEService laser_service("19B10000-E8F2-537E-4F6C-D104768A1215");
 // Bluetooth® Low Energy LED Switch Characteristic - custom 128-bit UUID, read and writable by central
 BLEIntCharacteristic servoCharacteristic1("19B10001-E8F2-537E-4F6C-D104768A1201", BLERead | BLEWrite);
 BLEIntCharacteristic servoCharacteristic2("19B10001-E8F2-537E-4F6C-D104768A1202", BLERead | BLEWrite);
+BLEUnsignedLongCharacteristic laserCharacteristic("19B10001-E8F2-537E-4F6C-D104768A1203", BLERead | BLENotify);
 
 //const int ledPin = LED_BUILTIN; // pin to use for the LED
 int servo_pos1=-1;
@@ -166,20 +167,26 @@ void setup() {
   }
   // set advertised local name and service UUID:
   BLE.setLocalName("nano 33 ble");
-  BLE.setAdvertisedService(servo_service);
 
   // add the characteristic to the service
   servo_service.addCharacteristic(servoCharacteristic1);
   servo_service.addCharacteristic(servoCharacteristic2);
+  laser_service.addCharacteristic(laserCharacteristic);
 
   // add service
   BLE.addService(servo_service);
+  BLE.addService(laser_service);
+
+
 
   // set the initial value for the characeristic:
   servoCharacteristic1.writeValue(0);
   servoCharacteristic2.writeValue(0);
-
+  laserCharacteristic.writeValue(0.f);
   // start advertising
+
+  BLE.setAdvertisedService(servo_service);
+
   BLE.advertise();
 }
 
@@ -225,45 +232,30 @@ void loop() {
           }
           // Output corresponding real distance
             TOF_signal = (TOF_data[j + 12]) | (TOF_data[j + 13] << 8);
+            float laser_data = TOF_distance;
             if (servoCharacteristic1.written()&&servoCharacteristic2.written()) {
             servo_pos1=servoCharacteristic1.value();
             servo_pos2=servoCharacteristic2.value();
-            /*
-            Serial.println(servo_pos1);
-            Serial.println(servo_pos2);
-            Serial.print(TOF_distance, DEC);
-            */
-           
+            
+            laserCharacteristic.writeValue(TOF_distance);
+
             Serial.print(servo_pos1);
             Serial.print(",");
             Serial.print(servo_pos2);
             Serial.print(",");
-            Serial.print(realDistances[closestIndex]);
+            Serial.print(laser_data);
             Serial.print(",");
             Serial.print(micros());
             Serial.println(",");
             }
-
-           // fprintf(test, "mks %d, real distence %f, TOF signal %d, servo 1 %d, servo 2 %d \n", micros(), realDistances[closestIndex], TOF_signal, servo_pos1, servo_pos2);
         }
         break;
       }
       
     }
   }
-    /*
-      if (servoCharacteristic1.written()&&servoCharacteristic2.written()) {
-        servo_pos1=servoCharacteristic1.value();
-        servo_pos2=servoCharacteristic2.value();
-        Serial.println("characteristic received ");
-        //Serial.println("");
-        Serial.println(servo_pos1);
-        Serial.println(servo_pos2);
-        Serial.println("");
-      }
-      */
+
     }
-    //fclose(test);
     Serial.print(F("Disconnected from central: "));
     Serial.println(central.address());
     
