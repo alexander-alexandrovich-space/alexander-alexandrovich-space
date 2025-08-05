@@ -1,35 +1,32 @@
 clc; clear; close all;
 
 %% === Параметры сети LoRa ===
-%numNodes = 100;               % Количество узлов в сети
 txPower = 20;                % Передаточная мощность (dBm)
 sensitivity = -137;          % Чувствительность приемника (dBm)
 freq = 868e6;                % Частота передачи (868 MHz)
+Gtx=2;
+Grx=2;
 
-rng(42);
+rng(42); % сид
 %% === Физические параметры и настройки орбитальной модели ===
 mu = 3.986004418e14;    % Гравитационный параметр Земли, м^3/с^2
 R_earth = 6400000;      % Радиус Земли, м
 
-% Задаем группы орбит: выбираем несколько орбитальных высот
-% (r - расстояние от центра Земли)
-r_orbits = [7014000, 7628000];  % примерные орбитальные радиусы (м)
+r_orbits = [(160000+2200000)/2+6400000];  %  орбитальные радиусы (м)
 
 % Задаем время симуляции (секундах)
-t = 1000;  % например, через 1000 секунд после начального момента
+t = 100000;  % например, через 1000 секунд после начального момента
 
 %% === Параметры размещения спутников ===
-numPerOrbit = 20;  % число спутников на каждой орбите
+numPerOrbit = 28;  % число спутников на каждой орбите
 
 % Для каждой группы орбит будем генерировать спутники для 3 типов:
-% 1. Экваториальные: i = 0°, RAAN = 0.
-% 2. Полярные: i = 90°, RAAN = 0.
-% 3. Наклонные: i = 30° (можно добавить и i = 60°), RAAN = 0.
+% 1. Экваториальные: i = 0, RAAN = 0.
+% 2. Полярные: i = 90, RAAN = 0.
+% 3. Наклонные: i = 60 
 %
-% Для каждой орбиты задаём начальный сдвиг (phaseShift) по фазе, чтобы обеспечить равномерное распределение.
 
-% Зададим для каждой группы массив структур:
-satellites = [];  % итоговый массив спутников
+satellites = [];  
 %--- Группа 1: Экваториальные орбиты (i = 0°) ---
 inclination_eq = 0;
 RAAN_eq = deg2rad(0*360);
@@ -56,6 +53,7 @@ for idx = 1:length(r_orbits)
         sat.y = r * (sin(RAAN_eq)*cos(sat.trueAnomaly) + cos(RAAN_eq)*sin(sat.trueAnomaly));
         sat.z = 0;
         sat.group = 'Equatorial';
+        sat.isIsolated=true;
         satellites = [satellites; sat];
     end
 end
@@ -86,16 +84,17 @@ for idx = 1:length(r_orbits)
         sat.lat = rad2deg(asin(sat.z/r));
         sat.lon = rad2deg(atan2(sat.y, sat.x));
         sat.group = 'Polar';
+        sat.isIsolated=true;
         satellites = [satellites; sat];
     end
 end
 
-% --- Группа 3: Наклонные орбиты (i = 30°) ---
+% --- Группа 3: Наклонные орбиты  ---
 
 
-for m=1:12%m=1:round(2*pi*6560000/1500000)
+for m=1:10%m=1:round(2*pi*6560000/1500000)
     inclination_inc = deg2rad(60);
-    RAAN_inc = deg2rad(30*m); %RAAN_inc = deg2rad(rad2deg(acos((-(1500)^2+2*(6560)^2)/(2*(6560)^2)))*m);
+    RAAN_inc = deg2rad(36*m); %RAAN_inc = deg2rad(rad2deg(acos((-(1500)^2+2*(6560)^2)/(2*(6560)^2)))*m);
     phaseShift_inc = 0;
     for idx = 1:length(r_orbits)
         r = r_orbits(idx);
@@ -119,6 +118,7 @@ for m=1:12%m=1:round(2*pi*6560000/1500000)
             sat.lat = rad2deg(asin(sat.z/r));
             sat.lon = rad2deg(atan2(sat.y, sat.x));
             sat.group = 'Inclined';
+            sat.isIsolated=true;
             satellites = [satellites; sat];
         end
     end
@@ -126,103 +126,163 @@ end
 %% ===============Задание количества узлов в сети=============
 numNodes= length(satellites);
 
-%% === Генерация расположения узлов (экваториальный пояс ±30°) (cтарая случайная)===
-% r_min = 6560000;                  % Минимальный орбитальный радиус (м)
-% r_max = 8400000;                  % Максимальный орбитальный радиус (м)
-% 
-% theta = rand(1, numNodes) * 2 * pi; % Равномерное распределение по долготе
-% 
-% % Концентрация узлов в экваториальном поясе (±30° широты)
-% delta_deg = 30;                       % Ширина пояса в градусах
-% delta_rad = deg2rad(delta_deg);        % Преобразование в радианы
-% U_min = cos(pi/2 + delta_rad);        % cos(120°) = -0.5
-% U_max = cos(pi/2 - delta_rad);        % cos(60°) = 0.5
-% U = U_min + (U_max - U_min)*rand(1, numNodes); % Рандомные значения U
-% phi = acos(U);                        % Угол phi для концентрации у экватора
-% 
-% 
-% r_nodes = r_min + (r_max - r_min) * rand(1, numNodes);
-% 
-% % Преобразование в декартовы координаты
-% x_nodes = r_nodes .* sin(phi) .* cos(theta);
-% y_nodes = r_nodes .* sin(phi) .* sin(theta);
-% z_nodes = r_nodes .* cos(phi);
-
 %% ============= Присвоение позиций================
-
-%nodes = [x_nodes' y_nodes' z_nodes']; %случайный способ
-
 nodes = zeros(length(satellites), 3);
 for i = 1:length(satellites)
     nodes(i, :) = [satellites(i).x, satellites(i).y, satellites(i).z];
 end
-% детерминированный способ
+%% === Диаграмма направленности и ослабление ===
 
-%% === Вычисление дальности связи и построение связей ===
+min_gain_dB = -20;      % минимальное усиление (дБ)
+attenuation_dB = zeros(numNodes);
 
-PL_margin = 147.55;          % Константа FSPL
-c=3e8;
 
-meshRange = 10^((txPower - sensitivity - 20*log10(freq) + PL_margin)/20);
-connections = zeros(numNodes);
+% Поворот вокруг радиус-вектора
 
-realmeshranges=zeros(1,numNodes);
+beta_angle = deg2rad(90);
 
-W = inf(numNodes);
+% Для каждого спутника вычисляем вектор ориентации (по направлению движения)
+for i = 1:numNodes
+    pos = [satellites(i).x; satellites(i).y; satellites(i).z];
+    nodes(i,:) = pos';
+    
+    % Ось орбиты (нормаль к плоскости)
+    incl = satellites(i).inclination;
+    RAAN = satellites(i).RAAN;
+    normal = [sin(RAAN)*sin(incl); -cos(RAAN)*sin(incl); cos(incl)];
 
-noiseOffset=zeros(1,numNodes);
+    % Скорость как cross(omega, r)
+    vel = cross(normal, pos);
+    v_dir = vel / norm(vel);
+    
+    satellites(i).antennaOrient = v_dir;
+    
+     %  Находим вектор в плоскости орбиты, перпендикулярный радиальному
+        perp_vec = cross(normal, v_dir);
+        perp_vec = perp_vec / norm(perp_vec);
+        
+        %  Матрица поворота
+        R = [cos(beta_angle) -sin(beta_angle) 0;
+             sin(beta_angle)  cos(beta_angle) 0;
+             0               0              1];
+        
+        % Преобразуем базис: [v_dir, perp_vec, n_vec] -> [x,y,z]
+        M = [ v_dir perp_vec normal];
+        
+        % Поворачиваем вектор ориентации
+        rotated_orient_local = R * [0; 0; 1];  
 
-realrange=zeros(1,numNodes);
+        % Запоминаем ориентацию антенны
+        satellites(i).antennaOrient = M * rotated_orient_local;
+end
 
-for i=1:numNodes
-    for j = i+1:numNodes
-        noiseOffset(i,j)=rand*5;
-        noiseOffset(j,i)=noiseOffset(i,j);
+
+% Расчет ослабления для каждого соединения (дипольная модель)
+for i = 1:numNodes
+    ori = satellites(i).antennaOrient/norm(satellites(i).antennaOrient);
+    for j = 1:numNodes
+        if i ~= j
+            vec_ij = nodes(j,:)' - nodes(i,:)';
+            d_dir = vec_ij / norm(vec_ij);
+            
+            % Косинус угла между направлением антенны и вектором к цели
+            cos_angle = dot(ori, d_dir);
+            angle = acos(cos_angle);
+            
+            % Модель дипольной антенны: G ~ sin(θ)
+            % Где θ - угол от оси антенны
+            gain_linear = sin(angle);
+            
+            % Преобразуем в dB с ограничением минимального значения
+            angle_loss_dB = 20*log10(max(10^(min_gain_dB/20), gain_linear));
+            attenuation_dB(i,j) = angle_loss_dB;
+        else
+            attenuation_dB(i,j) = 0; % для самого себя
+        end
     end
 end
 
+
+ 
+  
+   
+%% === Вычисление дальности связи и построение связей ===
+c=3e8;
+SF =12;
+BW = 125000;
+
+CodeRateFec = 4/8;
+CodeRateNoFec = 1;
+
+CODERATE=CodeRateFec;
+
+CASE=1; % 1- эмпирическая инженерная модель, 2 - q-функция; A*exp(margin*B)
+% margin - на сколько дб выше порогового с-ш, А - пороговая BERмощностит апмпапаот, B: BER=A*e^-margin*B
+
+connections = zeros(numNodes);
+W = inf(numNodes);
+realrange=zeros(numNodes);
+rxPower=zeros(numNodes);
+SNR = zeros(numNodes);
+BER = zeros(numNodes);
+RATE = zeros(numNodes);
+LoRalimit = zeros(numNodes);
+
+lambda = c/freq;
+FSPLc = 20*log10(4*pi/lambda);
+
+noiseOffset=5;
+
 for i = 1:numNodes
     for j = i+1:numNodes
-        dist = norm(nodes(i,:) - nodes(j,:));   
-        realrange(i)=10^((txPower - sensitivity - 20*log10(freq) + PL_margin-noiseOffset(i,j))/20);
-        if dist < realrange(i)
+        
+        %Рассчет расстояния между узлами
+        dist = norm(nodes(i,:) - nodes(j,:));
+        
+        % рассчет мощности на каждом приемнике
+        rxPower(i,j) = txPower + Gtx + Grx + attenuation_dB(i,j) + attenuation_dB(j,i) - 20*log10(dist) - FSPLc;
+        rxPower(j,i) = txPower + Gtx + Grx + attenuation_dB(i,j) + attenuation_dB(j,i) - 20*log10(dist) - FSPLc;
+
+        % рассчет метрик
+        [SNR(i,j), BER(i,j), RATE(i,j), LoRalimit(i,j)] = linkMetrics_LoRa_BER(rxPower(i,j),BW,SF, CASE, CODERATE);
+        [SNR(j,i), BER(j,i), RATE(j,i), LoRalimit(j,i)] = linkMetrics_LoRa_BER(rxPower(j,i),BW,SF, CASE, CODERATE);
+
+        realrange(i,j)=10^((txPower - sensitivity + Gtx + Grx + attenuation_dB(i,j) + attenuation_dB(j,i)  - FSPLc - noiseOffset)/20);              
+        realrange(j,i)=10^((txPower - sensitivity + Gtx + Grx + attenuation_dB(i,j) + attenuation_dB(j,i)  - FSPLc - noiseOffset)/20);
+        if SNR(i,j) >= min_gain_dB && SNR(j,i) >= min_gain_dB && dist<realrange(i,j) && dist<realrange(j,i)
             connections(i,j)=1;
             connections(j,i)=1;
-            totalDelay = dist / c;  % сек.
+            totalDelay = dist / c; 
             W(i, j) = totalDelay;
             W(j, i) = totalDelay;
         end
     end
 end
 
-rr=mean(realrange);
+rr=10^((txPower - sensitivity + Gtx + Grx - FSPLc - noiseOffset)/20);
        
 
+fprintf('\nРеальная дальность (дополнительный шум 5дБ без диаграмм направленности) %.2f км:\n', rr/1000);
 
-
-fprintf('\nРасчетная дальность %.2f км:\n', meshRange/1000);
-fprintf('\nРеальная дальность (+ шум) %.2f км:\n', rr/1000);
 
 %% изолированные узлы и кластеры
 isolatedNodes = [];
 for i = 1:numNodes
-    isIsolated = true;
     for j = 1:numNodes
         if i == j, continue; end % Пропускаем сравнение с собой
         if connections(i,j)==1
-            isIsolated = false;
+            satellites(i).isIsolated = false;
             break; % Прерываем цикл при первой найденной связи
         end
     end
-    if isIsolated
+    if satellites(i).isIsolated == true
+        satellites(i).group = 'Isolated';
         isolatedNodes(end+1) = i;
     end
 end
 
 fprintf('\nИзолированные узлы (расстояние > %.2f км):\n', rr/1000);
 disp(isolatedNodes);
-
-
 
 
 G = graph(connections);
@@ -264,9 +324,9 @@ for i = 1:numNodes
 end
 
 %
-best_i=1;
+%best_i=1;
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-best_j=500;
+%best_j=500;
 %
 
 if best_i == 0 || best_j == 0
@@ -274,10 +334,6 @@ if best_i == 0 || best_j == 0
 else
     fprintf('\nПара узлов с максимальным физическим расстоянием и существующим маршрутом: %d и %d (%.2f км)\n', best_i, best_j, D_phys(best_i,best_j)/1000);
 end
-
-
-
-
 
 G_weight = graph(W);  % взвешенный граф, где ребра есть только для действующих соединений
 [path, totalDelay] = shortestpath(G_weight, best_i, best_j);
@@ -307,397 +363,121 @@ else
     [worst_i, worst_j] = find(allDelays == worstDelay, 1);  
     % Получаем маршрут между ними с накоплением задержки
     worstPath = shortestpath(G_weight, worst_i, worst_j);
+    fprintf('\nПара узлов с максимальной задержкой: %d и %d (%.2f км)\n', worst_i, worst_j, D_phys(worst_i,worst_j)/1000);
     disp('Наихудший маршрут (узлы):');
     disp(worstPath);
+
 end
 
 %% === Моделирование скорости передачи и оценка ошибок для наилучшего маршрута ===
-% Предположим, что bestPath и totalDelay получены ранее из поиска маршрута по графу G_weight.
-    % Параметры пакета и передачи
-     % Параметры пакета
-  % Симуляция передачи данных по лучшему маршруту с подсчетом ошибок для каждого узла
 
- bestPath=shortestpath(G_conn, best_i, best_j);
+bestpath = shortestpath(G_weight, best_i, best_j);
+
 packetSize = 240; % размер пакета в битах
-hopErrors = zeros(1, length(bestPath)-1);
-hopBERs = zeros(1, length(bestPath)-1);
-hopSNRs = zeros(1, length(bestPath)-1);
 
-for k = 1:length(bestPath)-1
-    i1 = bestPath(k);
-    i2 = bestPath(k+1);
-    dist = norm(nodes(i1,:) - nodes(i2,:));
-    effectivePathLoss = 20*log10(dist) + 20*log10(freq) - PL_margin + noiseOffset(i1, i2);
-    rxPower = txPower - effectivePathLoss;
-    SNR_hop = rxPower - sensitivity;
-    hopSNRs(k) = SNR_hop;
-   % Расчет BER на основе SNR
-    if SNR_hop < -20
-        BER_hop = 1; % При SNR ниже -20 дБ считаем, что все биты ошибочны
-    else
-        % Примерная оценка BER на основе SNR
-        BER_hop = 0.5 * erfc(sqrt(10^(SNR_hop / 10)));
+hopBERs = zeros(1, length(bestpath)-1);
+hopSNRs = zeros(1, length(bestpath)-1);
+hopErrors = zeros(1, length(bestpath)-1);
+dataRate = zeros(1, length(bestpath)-1);
+times = zeros(1, length(bestpath)-1);
+
+for k = 1:length(bestpath)-1
+    i1 = bestpath(k);
+    i2 = bestpath(k+1);
+    hopSNRs(k) = SNR(i1,i2);
+    hopBERs(k) = BER(i1,i2);
+    dataRate(k) = LoRalimit(i1,i2);
+    if dataRate(k) > 293
+        dataRate(k)=293;
     end
-
-    hopBERs(k) = BER_hop;
-    errors = binornd(packetSize, BER_hop);
+    times(k)=packetSize/dataRate(k);
+    errors = binornd(packetSize, BER(i1,i2));
     hopErrors(k) = errors;
 end
 
-
-
 totalErrors = sum(hopErrors);
-fprintf('\nСимуляция передачи по лучшему маршруту:\n');
-for k = 1:length(bestPath)-1
-    fprintf('Хоп от узла %d к узлу %d: SNR = %.2f дБ, BER = %.4e, ошибок = %d из %d бит\n', ...
-        bestPath(k), bestPath(k+1), hopSNRs(k), hopBERs(k), hopErrors(k), packetSize);
+overallTime = sum(times) + 0.2 * length(bestpath) + totalDelay; 
+relativeRate = packetSize/overallTime;
+
+fprintf('\nСимуляция передачи по "наилучшему" маршруту:\n');
+for k = 1:length(bestpath)-1
+    fprintf('Хоп от узла %d к узлу %d: SNR = %.2f дБ, BER = %.4e%%, ошибок = %d из %d бит\n', ...
+        bestpath(k), bestpath(k+1), hopSNRs(k), hopBERs(k)*100, hopErrors(k), packetSize);
 end
 fprintf('\nОбщее число ошибок по маршруту: %d из %d бит (накоплено по хопам)\n', ...
-    totalErrors, packetSize * (length(bestPath)-1));
+    totalErrors, packetSize * (length(bestpath)-1));
 
+avgSNR1 = mean (hopSNRs);
 
-
-% --------------------непосредственная модуляция через chirp----------------
-
-
-
-% Параметры LoRa CSS
-SF = 12;                % Spreading Factor (количество бит на символ)
-M = 2^SF;              % Размер созвездия
-BW = 125e3;            % Полоса частот (Гц)
-symDuration = 2^SF / BW;  % Длительность символа (сек)
-Fs = 125e1;              % Частота дискретизации (Гц)
-t_sym = linspace(0, symDuration, round(symDuration*Fs));
-% Генерация базового чирпа (up-chirp) от 0 до BW
-baseChirp = chirp(t_sym, 0, symDuration, BW);
-
-% Количество символов в пакете
-packetSymbols = packetSize / SF; 
-
-% Для каждого перехода по маршруту bestPath будем моделировать передачу пакета
-Niter = 1;  % число итераций для усреднения
-hopBER = zeros(1, length(bestPath)-1);
-
-for k = 1:length(bestPath)-1
-    i1 = bestPath(k);
-    i2 = bestPath(k+1);
-
-    % Используем ранее рассчитанный SNR для данного хопа
-    % Если SNR < -20, ставим его равным -20 для модели (порог LoRa)
-    SNR_hop = hopSNRs(k);
-    % Перевод SNR (дБ) в линейное отношение
-    snr_linear = 10^(SNR_hop/10);
-    % Энергия базового чирпа
-    Es = mean(abs(baseChirp).^2);
-    % Для передачи символа мощность сигнала равна Es; дисперсия шума определяется как:
-    noiseVar = Es / snr_linear;
-
-    totalBitErrors = 0;
-    totalBits = packetSize * Niter;
-    for iter = 1:Niter
-        % Генерация случайных битов
-        data_bits = randi([0 1], packetSize, 1);
-        % Группируем биты по SF и преобразуем в символы
-        dataSymbols = bi2de(reshape(data_bits, SF, []).', 'left-msb');
-
-        txSignal = [];
-        for s = 1:length(dataSymbols)
-            % Для LoRa CSS символ модулируется циклическим сдвигом базового чирпа
-            shift = round(dataSymbols(s) * length(baseChirp) / M);
-            modChirp = circshift(baseChirp, shift);
-            txSignal = [txSignal, modChirp];  %#ok<AGROW>
-        end
-        txSignal = txSignal(:);
-
-        % Генерация шума AWGN с дисперсией noiseVar
-        noise = sqrt(noiseVar/2) * (randn(size(txSignal)) + 1j*randn(size(txSignal)));
-        rxSignal = txSignal + noise;
-        
-        % Демодуляция: разбиваем сигнал на символы и для каждого выполняем корреляцию
-        rxSymbols = zeros(length(dataSymbols), 1);
-        L_chirp = length(baseChirp);
-        
-        % Преобразуем baseChirp в вектор-столбец для корректных операций
-        baseChirp = baseChirp(:); 
-        
-        for s = 1:length(dataSymbols)
-            segment = rxSignal((s-1)*L_chirp+1 : s*L_chirp);
-            correlations = zeros(1, M);
-            
-            % Преобразуем segment в столбец
-            segment = segment(:); 
-            
-            for m = 0:M-1
-                % Генерируем опорный чирп как вектор-столбец
-                refChirp = circshift(baseChirp, m);
-                % Поэлементное умножение векторов-столбцов
-                corrValue = abs(sum(segment .* conj(refChirp))); 
-                correlations(m+1) = corrValue;
-            end
-            
-            [~, detected] = max(correlations);
-            rxSymbols(s) = detected - 1;
-        end
-
-        % Преобразуем полученные символы обратно в биты
-        rxBits = de2bi(rxSymbols, SF, 'left-msb').';
-        rxBits = rxBits(:);
-        % Считаем ошибки
-        totalBitErrors = totalBitErrors + sum(data_bits ~= rxBits(1:packetSize));
-    end
-    hopBER(k) = totalBitErrors / (packetSize * Niter);
-    fprintf('\n Переход %d -> %d: SNR = %.2f dB, BER = %.4e\n', bestPath(k), bestPath(k+1), SNR_hop, hopBER(k));
-end
-
-overallBER = prod(1 - hopBER);
-fprintf('\n Общая вероятность безошибочной передачи по маршруту: %.4e\n', overallBER);
-fprintf('Общая вероятность ошибки (PER) по маршруту: %.4e\n', 1 - overallBER);
-
-
-% --------------------калькулятор по среднему снр--------------------------
-
-    dataRate=290;
-   % Расчет времени передачи без FEC (только для пакета)
-    txTime_noFEC = packetSize / dataRate;  % в секундах
-    
-    % Предположим, что для каждого ребра маршрута мы уже рассчитали SNR (в предыдущей части)
-    % Здесь для простоты расчитаем усредненное значение SNR по маршруту.
- 
-   
-    
-    % Усреднённое SNR по маршруту
-    avgSNR = mean( hopSNRs);
-    % Без FEC: при среднем SNR, модель exp(-max(SNR,0)/10) дает:
-    BER_noFEC = exp(-max(avgSNR,0)/10);  % max(-5.43, 0) = 0, поэтому BER_noFEC = exp(0)=1
-    PER_noFEC = 1 - (1 - BER_noFEC)^packetSize;  % Практически PER = 1
-    txTime_noFEC = packetSize / dataRate;  % Время передачи полезного пакета без FEC
-    overallTime_noFEC = length(bestPath)*(txTime_noFEC+0.2) + totalDelay;  % Общая задержка маршрута + время передачи
-    effectiveRate_noFEC = packetSize / overallTime_noFEC;  % Эффективная скорость передачи полезных бит
-    
-    % С применением FEC:
-    % Предположим, что алгоритм FEC снижает эффективное BER до фиксированного уровня:
-    effectiveBER_FEC = BER_noFEC/10000;  % Допустим, остаточный BER = 10^-5 с хорошо настроенным FEC
-    PER_FEC = 1 - (1 - effectiveBER_FEC)^packetSize;  
-    codeRate = 0.5;
-    txTime_FEC = (packetSize / codeRate) / dataRate;  % Время передачи с учетом избыточности
-    overallTime_FEC = length(bestPath)*(txTime_FEC+0.2) + totalDelay;  % Общая задержка маршрута + время передачи
-    effectiveRate_FEC = packetSize / overallTime_FEC;  % Эффективная скорость полезной передачи
-    
-    fprintf('\n--- Без FEC ---\n');
-    fprintf('Среднее SNR: %.2f дБ\n', avgSNR);
-    fprintf('BER (без FEC): %.4e\n', BER_noFEC);
-    fprintf('PER (без FEC): %.4f\n', PER_noFEC);
-    fprintf('Время передачи пакета (без FEC): %.3f сек\n', overallTime_noFEC);
-    fprintf('Эффективная скорость передачи (без FEC): %.2f бит/сек\n', effectiveRate_noFEC);
-    
-    fprintf('\n--- С FEC (кодовое отношение = %.2f, эффективное BER = %.4e) ---\n', codeRate, effectiveBER_FEC);
-    fprintf('PER (с FEC): %.4f\n', PER_FEC);
-    fprintf('Время передачи пакета (с FEC): %.3f сек\n', overallTime_FEC);
-    fprintf('Эффективная скорость передачи (с FEC): %.2f бит/сек\n', effectiveRate_FEC);
-
-
+ fprintf('Время передачи пакета: %.3f сек\n', overallTime);
+ fprintf('Эффективная скорость передачи: %.2f бит/сек\n', relativeRate);
     %% === Моделирование скорости передачи и оценка ошибок для наихудшего маршрута ===
-% Предположим, что bestPath и totalDelay получены ранее из поиска маршрута по графу G_weight.
-    % Параметры пакета и передачи
-     % Параметры пакета
-  % Симуляция передачи данных по лучшему маршруту с подсчетом ошибок для каждого узла
 
-worstPath = shortestpath(G_weight, worst_i, worst_j);
+worstpath = shortestpath(G_weight, worst_i, worst_j);
+
 packetSize = 240; % размер пакета в битах
-hopErrors = zeros(1, length(worstPath)-1);
-hopBERs = zeros(1, length(worstPath)-1);
-hopSNRs = zeros(1, length(worstPath)-1);
 
-for k = 1:length(worstPath)-1
-    i1 = worstPath(k);
-    i2 = worstPath(k+1);
-    dist = norm(nodes(i1,:) - nodes(i2,:));
-    effectivePathLoss = 20*log10(dist) + 20*log10(freq) - PL_margin + noiseOffset(i1, i2);
-    rxPower = txPower - effectivePathLoss;
-    SNR_hop = rxPower - sensitivity;
-    hopSNRs(k) = SNR_hop;
-   % Расчет BER на основе SNR
-    if SNR_hop < -20
-        BER_hop = 1; % При SNR ниже -20 дБ считаем, что все биты ошибочны
-    else
-        % Примерная оценка BER на основе SNR
-        BER_hop = 0.5 * erfc(sqrt(10^(SNR_hop / 10)));
+hopBERs = zeros(1, length(worstpath)-1);
+hopSNRs = zeros(1, length(worstpath)-1);
+hopErrors = zeros(1, length(worstpath)-1);
+dataRate = zeros(1, length(worstpath)-1);
+times = zeros(1, length(worstpath)-1);
+worstlen = zeros(1, length(worstPath)-1);
+
+for k = 1:length(worstpath)-1
+    i1 = worstpath(k);
+    i2 = worstpath(k+1);
+    worstlen(k)=D_phys(i1,i2);
+    hopSNRs(k) = SNR(i1,i2);
+    hopBERs(k) = BER(i1,i2);
+    dataRate(k) = LoRalimit(i1,i2);
+    if dataRate(k) > 293
+        dataRate(k)=293;
     end
-
-    hopBERs(k) = BER_hop;
-    errors = binornd(packetSize, BER_hop);
+    times(k)=packetSize/dataRate(k);
+    errors = binornd(packetSize, BER(i1,i2));
     hopErrors(k) = errors;
 end
 
-
-
 totalErrors = sum(hopErrors);
-fprintf('\nСимуляция передачи по наихудшему маршруту:\n');
-for k = 1:length(worstPath)-1
-    fprintf('Хоп от узла %d к узлу %d: SNR = %.2f дБ, BER = %.4e, ошибок = %d из %d бит\n', ...
-        worstPath(k), worstPath(k+1), hopSNRs(k), hopBERs(k), hopErrors(k), packetSize);
+overallTime = sum(times) + 0.2 * length(worstpath) + worstDelay; 
+relativeRate = packetSize/overallTime;
+
+fprintf('\nСимуляция передачи по "наихудшему" маршруту:\n');
+for k = 1:length(worstpath)-1
+    fprintf('Хоп от узла %d к узлу %d: SNR = %.2f дБ, BER = %.4e%%, ошибок = %d из %d бит\n', ...
+        worstpath(k), worstpath(k+1), hopSNRs(k), hopBERs(k)*100, hopErrors(k), packetSize);
 end
 fprintf('\nОбщее число ошибок по маршруту: %d из %d бит (накоплено по хопам)\n', ...
-    totalErrors, packetSize * (length(worstPath)-1));
+    totalErrors, packetSize * (length(worstpath)-1));
 
-%----------------- непосредственная модуляция через chirp-------------------
-
-
-% Параметры LoRa CSS
-SF = 12;                % Spreading Factor (количество бит на символ)
-M = 2^SF;              % Размер созвездия
-BW = 125e3;            % Полоса частот (Гц)
-symDuration = 2^SF / BW;  % Длительность символа (сек)
-Fs = 125e1;              % Частота дискретизации (Гц)
-t_sym = linspace(0, symDuration, round(symDuration*Fs));
-% Генерация базового чирпа (up-chirp) от 0 до BW
-baseChirp = chirp(t_sym, 0, symDuration, BW);
-
-% Количество символов в пакете
-packetSymbols = packetSize / SF; 
-
-% Для каждого перехода по маршруту bestPath будем моделировать передачу пакета
-Niter = 1;  % число итераций для усреднения
-hopBER = zeros(1, length(worstPath)-1);
-
-for k = 1:length(worstPath)-1
-    i1 = worstPath(k);
-    i2 = worstPath(k+1);
-
-    % Используем ранее рассчитанный SNR для данного хопа
-    % Если SNR < -20, ставим его равным -20 для модели (порог LoRa)
-    SNR_hop = hopSNRs(k);
-    % Перевод SNR (дБ) в линейное отношение
-    snr_linear = 10^(SNR_hop/10);
-    % Энергия базового чирпа
-    Es = mean(abs(baseChirp).^2);
-    % Для передачи символа мощность сигнала равна Es; дисперсия шума определяется как:
-    noiseVar = Es / snr_linear;
-
-    totalBitErrors = 0;
-    totalBits = packetSize * Niter;
-    for iter = 1:Niter
-        % Генерация случайных битов
-        data_bits = randi([0 1], packetSize, 1);
-        % Группируем биты по SF и преобразуем в символы
-        dataSymbols = bi2de(reshape(data_bits, SF, []).', 'left-msb');
-
-        txSignal = [];
-        for s = 1:length(dataSymbols)
-            % Для LoRa CSS символ модулируется циклическим сдвигом базового чирпа
-            shift = round(dataSymbols(s) * length(baseChirp) / M);
-            modChirp = circshift(baseChirp, shift);
-            txSignal = [txSignal, modChirp];  %#ok<AGROW>
-        end
-        txSignal = txSignal(:);
-
-        % Генерация шума AWGN с дисперсией noiseVar
-        noise = sqrt(noiseVar/2) * (randn(size(txSignal)) + 1j*randn(size(txSignal)));
-        rxSignal = txSignal + noise;
-
-        % Демодуляция: разбиваем сигнал на символы и для каждого выполняем корреляцию
-        rxSymbols = zeros(length(dataSymbols), 1);
-        L_chirp = length(baseChirp);
-
-        % Преобразуем baseChirp в вектор-столбец для корректных операций
-        baseChirp = baseChirp(:); 
-
-        for s = 1:length(dataSymbols)
-            segment = rxSignal((s-1)*L_chirp+1 : s*L_chirp);
-            correlations = zeros(1, M);
-
-            % Преобразуем segment в столбец
-            segment = segment(:); 
-
-            for m = 0:M-1
-                % Генерируем опорный чирп как вектор-столбец
-                refChirp = circshift(baseChirp, m);
-                % Поэлементное умножение векторов-столбцов
-                corrValue = abs(sum(segment .* conj(refChirp))); 
-                correlations(m+1) = corrValue;
-            end
-
-            [~, detected] = max(correlations);
-            rxSymbols(s) = detected - 1;
-        end
-
-        % Преобразуем полученные символы обратно в биты
-        rxBits = de2bi(rxSymbols, SF, 'left-msb').';
-        rxBits = rxBits(:);
-        % Считаем ошибки
-        totalBitErrors = totalBitErrors + sum(data_bits ~= rxBits(1:packetSize));
-    end
-    hopBER(k) = totalBitErrors / (packetSize * Niter);
-    fprintf('\n Переход %d -> %d: SNR = %.2f dB, BER = %.4e\n', worstPath(k), worstPath(k+1), SNR_hop, hopBER(k));
-end
-
-overallBER = prod(1 - hopBER);
-fprintf('\n Общая вероятность безошибочной передачи по маршруту: %.4e\n', overallBER);
-fprintf('Общая вероятность ошибки (PER) по маршруту: %.4e\n', 1 - overallBER);
-
-% --------------------калькулятор по среднему снр--------------------------
-
-
-
-    dataRate=290;
-   % Расчет времени передачи без FEC (только для пакета)
-    txTime_noFEC = packetSize / dataRate;  % в секундах
-
-    % Предположим, что для каждого ребра маршрута мы уже рассчитали SNR (в предыдущей части)
-    % Здесь для простоты расчитаем усредненное значение SNR по маршруту.
-
-
-
-    % Усреднённое SNR по маршруту
-    avgSNR = mean( hopSNRs);
-    % Без FEC: при среднем SNR, модель exp(-max(SNR,0)/10) дает:
-    BER_noFEC = exp(-max(avgSNR,0)/10);  % max(-5.43, 0) = 0, поэтому BER_noFEC = exp(0)=1
-    PER_noFEC = 1 - (1 - BER_noFEC)^packetSize;  % Практически PER = 1
-    txTime_noFEC = packetSize / dataRate;  % Время передачи полезного пакета без FEC
-    overallTime_noFEC = length(worstPath)*(txTime_noFEC+0.2) + worstDelay;  % Общая задержка маршрута + время передачи
-    effectiveRate_noFEC = packetSize / overallTime_noFEC;  % Эффективная скорость передачи полезных бит
-
-    % С применением FEC:
-    % Предположим, что алгоритм FEC снижает эффективное BER до фиксированного уровня:
-    effectiveBER_FEC = BER_noFEC/10000;  % Допустим, остаточный BER = 10^-5 с хорошо настроенным FEC
-    PER_FEC = 1 - (1 - effectiveBER_FEC)^packetSize;  
-    codeRate = 0.5;
-    txTime_FEC = (packetSize / codeRate) / dataRate;  % Время передачи с учетом избыточности
-    overallTime_FEC = length(worstPath)*(txTime_FEC+0.2) + worstDelay;  % Общая задержка маршрута + время передачи
-    effectiveRate_FEC = packetSize / overallTime_FEC;  % Эффективная скорость полезной передачи
-
-    fprintf('\n--- Без FEC ---\n');
-    fprintf('Среднее SNR: %.2f дБ\n', avgSNR);
-    fprintf('BER (без FEC): %.4e\n', BER_noFEC);
-    fprintf('PER (без FEC): %.4f\n', PER_noFEC);
-    fprintf('Время передачи пакета (без FEC): %.3f сек\n', overallTime_noFEC);
-    fprintf('Эффективная скорость передачи (без FEC): %.2f бит/сек\n', effectiveRate_noFEC);
-
-    fprintf('\n--- С FEC (кодовое отношение = %.2f, эффективное BER = %.4e) ---\n', codeRate, effectiveBER_FEC);
-    fprintf('PER (с FEC): %.4f\n', PER_FEC);
-    fprintf('Время передачи пакета (с FEC): %.3f сек\n', overallTime_FEC);
-    fprintf('Эффективная скорость передачи (с FEC): %.2f бит/сек\n', effectiveRate_FEC);
+ fprintf('Время передачи пакета: %.3f сек\n', overallTime);
+ fprintf('Эффективная скорость передачи: %.2f бит/сек\n', relativeRate);
+avgSNR2 = mean (hopSNRs);
 
 %% Визуализация
 
+
+figure; hold on; grid on; axis equal;
+
+ scale = 1000000; % Масштаб для видимости стрелки
+ 
 orbitParams = [];
 for i = 1:length(satellites)
+    quiver3(satellites(i).x, satellites(i).y, satellites(i).z,scale*satellites(i).antennaOrient(1),scale*satellites(i).antennaOrient(2),scale*satellites(i).antennaOrient(3),'cyan', 'LineWidth',1);
     if strcmp(satellites(i).group, 'Inclined')
         orbitParams = [orbitParams; satellites(i).r, satellites(i).inclination, satellites(i).RAAN]; %#ok<AGROW>
     end
 end
 [uniqueOrbits, ia, ~] = unique(orbitParams, 'rows');
 
+
+
 % Определяем значения true anomaly от 0 до 2pi
 theta_vals = linspace(0, 2*pi, 360);
 
 % Определим разные цвета для разных групп
-colors = struct('Equatorial', 'b', 'Polar', 'b', 'Inclined', 'b');
-
-figure; hold on; grid on; axis equal;
-
-
-
+colors = struct('Equatorial', 'b', 'Polar', 'b', 'Inclined', 'b', 'Isolated', 'y');
 
 % Отображение орбит (уникальных)
 for i = 1:size(uniqueOrbits,1)
@@ -724,8 +504,6 @@ for idx = 1:length(r_orbits)
 end
 
 
-
-
 % Отображение спутников
 for i = 1:length(satellites)
     scatter3(satellites(i).x, satellites(i).y, satellites(i).z, 100, colors.(satellites(i).group), 'filled');
@@ -750,6 +528,28 @@ for i = 1:numNodes
     end
 end
 
+
+
+% Визуализация диаграммы направленности (тороидальная форма)
+sphere_res = 10;
+for i = 1:numNodes
+    pos = nodes(i,:);
+    v_dir = satellites(i).antennaOrient;
+    
+    % Создаем тороидальную поверхность
+    [X, Y, Z] = create_toroidal_pattern(pos, v_dir, 700000, sphere_res);
+    [x1, y1, z1] = create_toroidal_pattern(pos, -v_dir, 700000, sphere_res);
+
+    % Отрисовка полупрозрачной поверхности
+    surf(X, Y, Z, 'FaceAlpha', 0.2, 'EdgeColor', 'none', 'FaceColor', 'b');
+    surf(x1, y1, z1, 'FaceAlpha', 0.2, 'EdgeColor', 'none', 'FaceColor', 'b');
+
+end
+
+
+
+
+
 % Выделяем лучший маршрут между наиболее удалёнными узлами (если найден)
 if ~isempty(path)
     for k = 1:length(path)-1
@@ -770,6 +570,8 @@ if exist('worstPath','var') && ~isempty(worstPath)
         plot3([nodes(i1,1), nodes(i2,1)], [nodes(i1,2), nodes(i2,2)], [nodes(i1,3), nodes(i2,3)], 'r-', 'LineWidth', 3);
     end
 end
+
+
 
 %% ЗЕМЛЯ
 % Параметры Земли
@@ -798,3 +600,117 @@ lighting phong;
 % Настройка осей и вида
 view(3);
 rotate3d on;
+
+
+
+axis off                   % отключить оси
+set(gca, 'Color', 'none') % сделать фон области графика прозрачным
+set(gcf, 'Color', 'none') % сделать фон всей фигуры прозрачным
+box off                   % отключить рамку вокруг графика
+
+%% Функции
+%% Вспомогательная функция для создания тороидальной диаграммы
+function [X, Y, Z] = create_toroidal_pattern(center, orientation, radius, res)
+    % Создаем сферические координаты
+    [theta, phi] = meshgrid(linspace(0, 2*pi, res), linspace(0, pi, res));
+    
+    % Параметры тора
+    R_torus = radius * 0.7;  % большой радиус тора
+    r_torus = radius * 0.3;  % малый радиус тора
+    
+    % Координаты тора в локальной системе (ось Z - ориентация антенны)
+    x_loc = (R_torus + r_torus*cos(phi)) .* cos(theta);
+    y_loc = (R_torus + r_torus*cos(phi)) .* sin(theta);
+    z_loc = r_torus * sin(phi);
+    
+    % Поворачиваем локальную систему в соответствии с ориентацией антенны
+    z_axis = orientation(:);
+    z_axis = z_axis / norm(z_axis);
+    
+    % Создаем ортогональную систему координат
+    if abs(z_axis(3)) > 0.8
+        x_axis = [1; 0; 0];
+    else
+        x_axis = [0; 0; 1];
+    end
+    y_axis = cross(z_axis, x_axis);
+    y_axis = y_axis / norm(y_axis);
+    x_axis = cross(y_axis, z_axis);
+    
+    % Преобразуем координаты
+    X = center(1) + x_axis(1)*x_loc + y_axis(1)*y_loc + z_axis(1)*z_loc;
+    Y = center(2) + x_axis(2)*x_loc + y_axis(2)*y_loc + z_axis(2)*z_loc;
+    Z = center(3) + x_axis(3)*x_loc + y_axis(3)*y_loc + z_axis(3)*z_loc;
+end
+%% Функция для шума и BER
+function [SNR_dB, BER, C_shannon, Rb] = linkMetrics_LoRa_BER(P_rx_dBm, BW_Hz, SF, CASE, R)
+    % LoRa-ориентированная модель BER с учетом чувствительности и SNR-порогов
+     NF_dB = 6;
+switch CASE
+    case 1
+        k = 1.38064852e-23;
+        T = 290;
+        F = 10^(NF_dB/10);
+    
+        % Шумовая мощность
+        Pn = k * T * BW_Hz * F;
+        Pn_dBm = 10 * log10(Pn * 1e3);  % в dBm
+    
+        % SNR
+        SNR_dB = P_rx_dBm(:) - Pn_dBm;
+        SNR_lin = 10.^(SNR_dB/10);
+        N = numel(SNR_dB);
+        BER = zeros(N,1);
+    
+        % Табличные минимальные SNR для успешной демодуляции (Semtech AN1200.22)
+        SNR_thresh = [-7.5, -10, -12.5, -15, -17.5, -20];  % для SF7…SF12
+        sf_vals = 7:12;
+        
+        % Защита от выхода за пределы таблицы
+        idx = find(sf_vals == SF, 1);
+        if isempty(idx)
+            error('Unsupported SF value');
+        end
+        SNR_min = SNR_thresh(idx);
+    
+        % Модель BER: экспоненциальное снижение при превышении порога
+        for i = 1:N
+            margin = SNR_dB(i) - SNR_min;
+            if margin < 0
+                BER(i) = 0.5;  % связь невозможна
+            else
+                BER(i) = 0.01 * exp(-0.6 * margin / R);  % эмпирическая зависимость
+            end
+        end
+    case 2
+       
+        % P_rx_dBm — вектор мощностей на входе, дБм (Nx1)
+        N = numel(P_rx_dBm);
+        % 1) средняя шумовая мощность
+        k = 1.38064852e-23;    % Дж/К
+        T = 290;               % К
+        F = 10^(NF_dB/10);     % линеаризованный NF
+        Pn_mean = k * T * BW_Hz * F;  % средняя в ваттах
+    
+        % 2) генерируем AWGN (комплексный) для каждого узла
+        sigma = sqrt(Pn_mean/2);
+        noise_I = sigma * randn(N,1);
+        noise_Q = sigma * randn(N,1);
+        noise_W = noise_I.^2 + noise_Q.^2;
+    
+        % 3) переводим в дБм и считаем SNR
+        Pn_dBm = 10*log10(noise_W*1e3);
+        SNR_dB = P_rx_dBm(:) - Pn_dBm;
+        SNR_lin = 10.^(SNR_dB/10);
+    
+        % 4) SER и BER для CSS (прибл.)
+        M = 2^SF;
+        SER = qfunc( sqrt(2 * SNR_lin * SF / M) );
+        BER = SER ./ (SF * R);
+end
+
+    C_shannon  = BW_Hz * log2(1 + SNR_lin);  % [бит/с]
+    Rb = (BW_Hz/2^SF) * SF * R;  % [бит/с]
+
+
+end
