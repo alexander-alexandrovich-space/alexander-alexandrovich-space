@@ -1,20 +1,21 @@
 clc; clear; close all;
 
 %% === Параметры сети LoRa ===
-txPower = 20;                
+txPower = 20;                % Передаточная мощность (dBm)
 sensitivity = -137;          % Чувствительность приемника (dBm)
-freq = 868e6;               
+freq = 868e6;                % Частота передачи (868 MHz)
 Gtx=2;
 Grx=2;
 
 rng(42); % сид
 %% === Физические параметры и настройки орбитальной модели ===
 mu = 3.986004418e14;    % Гравитационный параметр Земли, м^3/с^2
-R_earth = 6400000;      
+R_earth = 6400000;      % Радиус Земли, м
 
-r_orbits = [(160000+2200000)/2+6400000];  %  высоты орбит в одной плоскости
+r_orbits = [(160000+2200000)/2+6400000];  %  орбитальные радиусы (м)
 
-t = 100000;  % время симуляции
+% Задаем время симуляции (секундах)
+t = 100000;  % например, через 1000 секунд после начального момента
 
 %% === Параметры размещения спутников ===
 numPerOrbit = 28;  % число спутников на каждой орбите
@@ -122,19 +123,22 @@ for m=1:10%m=1:round(2*pi*6560000/1500000)
         end
     end
 end
-%% === Переход к узлам сети ===
+%% ===============Задание количества узлов в сети=============
 numNodes= length(satellites);
+
+%% ============= Присвоение позиций================
 nodes = zeros(length(satellites), 3);
 for i = 1:length(satellites)
     nodes(i, :) = [satellites(i).x, satellites(i).y, satellites(i).z];
 end
-%% === Диаграмма направленности антенн и ослабление ===
+%% === Диаграмма направленности и ослабление ===
 
-min_gain_dB = -20;   
+min_gain_dB = -20;      % минимальное усиление (дБ)
 attenuation_dB = zeros(numNodes);
 
 
 % Поворот вокруг радиус-вектора
+
 beta_angle = deg2rad(90);
 
 % Для каждого спутника вычисляем вектор ориентации (по направлению движения)
@@ -153,20 +157,19 @@ for i = 1:numNodes
     
     satellites(i).antennaOrient = v_dir;
     
-     %  Находим вектор в плоскости орбиты, перпендикулярный радиальному,
-     %  поворачиваем базис
+     %  Находим вектор в плоскости орбиты, перпендикулярный радиальному
         perp_vec = cross(normal, v_dir);
         perp_vec = perp_vec / norm(perp_vec);
         
-    
+        %  Матрица поворота
         R = [cos(beta_angle) -sin(beta_angle) 0;
              sin(beta_angle)  cos(beta_angle) 0;
              0               0              1];
         
-
+        % Преобразуем базис: [v_dir, perp_vec, n_vec] -> [x,y,z]
         M = [ v_dir perp_vec normal];
         
-     
+        % Поворачиваем вектор ориентации
         rotated_orient_local = R * [0; 0; 1];  
 
         % Запоминаем ориентацию антенны
@@ -186,19 +189,24 @@ for i = 1:numNodes
             cos_angle = dot(ori, d_dir);
             angle = acos(cos_angle);
             
-        
+            % Модель дипольной антенны: G ~ sin(θ)
+            % Где θ - угол от оси антенны
             gain_linear = sin(angle);
             
-          
+            % Преобразуем в dB с ограничением минимального значения
             angle_loss_dB = 20*log10(max(10^(min_gain_dB/20), gain_linear));
             attenuation_dB(i,j) = angle_loss_dB;
         else
-            attenuation_dB(i,j) = 0; 
+            attenuation_dB(i,j) = 0; % для самого себя
         end
     end
 end
 
-%% === Вычисление дальности связи и сбор канальных метрик ===
+
+ 
+  
+   
+%% === Вычисление дальности связи и построение связей ===
 c=3e8;
 SF =12;
 BW = 125000;
@@ -228,8 +236,10 @@ noiseOffset=5;
 for i = 1:numNodes
     for j = i+1:numNodes
         
+        %Рассчет расстояния между узлами
         dist = norm(nodes(i,:) - nodes(j,:));
         
+        % рассчет мощности на каждом приемнике
         rxPower(i,j) = txPower + Gtx + Grx + attenuation_dB(i,j) + attenuation_dB(j,i) - 20*log10(dist) - FSPLc;
         rxPower(j,i) = txPower + Gtx + Grx + attenuation_dB(i,j) + attenuation_dB(j,i) - 20*log10(dist) - FSPLc;
 
@@ -255,14 +265,14 @@ rr=10^((txPower - sensitivity + Gtx + Grx - FSPLc - noiseOffset)/20);
 fprintf('\nРеальная дальность (дополнительный шум 5дБ без диаграмм направленности) %.2f км:\n', rr/1000);
 
 
-%% === Изолированные узлы и кластеры ===
+%% изолированные узлы и кластеры
 isolatedNodes = [];
 for i = 1:numNodes
     for j = 1:numNodes
-        if i == j, continue; end 
+        if i == j, continue; end % Пропускаем сравнение с собой
         if connections(i,j)==1
             satellites(i).isIsolated = false;
-            break; 
+            break; % Прерываем цикл при первой найденной связи
         end
     end
     if satellites(i).isIsolated == true
@@ -276,7 +286,7 @@ disp(isolatedNodes);
 
 
 G = graph(connections);
-components = conncomp(G); 
+components = conncomp(G);  % components(i) содержит номер компоненты для узла i
 numComponents = max(components);
 
 
@@ -293,6 +303,8 @@ end
 
 %% === Поиск пары узлов с максимальным физическим расстоянием, для которых существует маршрут по сети ===
 D_phys = pdist2(nodes, nodes);  % матрица физических расстояний
+% Построим взвешенный граф для маршрутизации
+% Создаем граф по матрице connections (только прямые связи)
 G_conn = graph(connections);
 
 maxD = -Inf;
@@ -300,6 +312,7 @@ best_i = 0;
 best_j = 0;
 for i = 1:numNodes
     for j = i+1:numNodes
+        % Проверяем, что узлы i и j находятся в одной связной компоненте (существует маршрут)
         if ~isempty(shortestpath(G_conn, i, j))
             if D_phys(i,j) > maxD
                 maxD = D_phys(i,j);
@@ -310,9 +323,11 @@ for i = 1:numNodes
     end
 end
 
-% Произвольные узлы
+%
 %best_i=1;
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %best_j=500;
+%
 
 if best_i == 0 || best_j == 0
     fprintf('Не найдено пары узлов с существующим маршрутом.\n');
@@ -331,9 +346,11 @@ else
     fprintf('Общая накопленная задержка по лучшему маршруту: %.3f секунд\n', totalDelay);
 end
 
-%% === Поиск наихудшего маршрута (максимальная задержка) ===
+%% === Поиск наихудшего маршрута (максимальная задержка) по задержке ===
+% Построим матрицу кратчайших задержек между всеми парами узлов
 allDelays = distances(G_weight);
 
+% Извлекаем конечные значения задержек (исключая Inf и 0 для диагонали)
 finiteDelays = allDelays(~isinf(allDelays) & allDelays > 0);
 
 if isempty(finiteDelays)
@@ -344,6 +361,7 @@ else
     
     % Найдем первую пару узлов, для которых задержка равна worstDelay
     [worst_i, worst_j] = find(allDelays == worstDelay, 1);  
+    % Получаем маршрут между ними с накоплением задержки
     worstPath = shortestpath(G_weight, worst_i, worst_j);
     fprintf('\nПара узлов с максимальной задержкой: %d и %d (%.2f км)\n', worst_i, worst_j, D_phys(worst_i,worst_j)/1000);
     disp('Наихудший маршрут (узлы):');
@@ -437,12 +455,12 @@ fprintf('\nОбщее число ошибок по маршруту: %d из %d 
  fprintf('Эффективная скорость передачи: %.2f бит/сек\n', relativeRate);
 avgSNR2 = mean (hopSNRs);
 
-%% === Визуализация ===
+%% Визуализация
 
 
 figure; hold on; grid on; axis equal;
 
- scale = 1000000; % Масштаб для видимости стрелки антенны
+ scale = 1000000; % Масштаб для видимости стрелки
  
 orbitParams = [];
 for i = 1:length(satellites)
@@ -555,7 +573,7 @@ end
 
 
 
-%% === Земля ===
+%% ЗЕМЛЯ
 % Параметры Земли
 radius = 6400000; % Радиус в метрах
 
@@ -590,13 +608,15 @@ set(gca, 'Color', 'none') % сделать фон области графика 
 set(gcf, 'Color', 'none') % сделать фон всей фигуры прозрачным
 box off                   % отключить рамку вокруг графика
 
-%% === Вспомогательная функция для создания тороидальной диаграммы ===
+%% Функции
+%% Вспомогательная функция для создания тороидальной диаграммы
 function [X, Y, Z] = create_toroidal_pattern(center, orientation, radius, res)
+    % Создаем сферические координаты
     [theta, phi] = meshgrid(linspace(0, 2*pi, res), linspace(0, pi, res));
     
-    % Параметры тора для диаграммы направленности
-    R_torus = radius * 0.7;  
-    r_torus = radius * 0.3;  
+    % Параметры тора
+    R_torus = radius * 0.7;  % большой радиус тора
+    r_torus = radius * 0.3;  % малый радиус тора
     
     % Координаты тора в локальной системе (ось Z - ориентация антенны)
     x_loc = (R_torus + r_torus*cos(phi)) .* cos(theta);
@@ -617,12 +637,14 @@ function [X, Y, Z] = create_toroidal_pattern(center, orientation, radius, res)
     y_axis = y_axis / norm(y_axis);
     x_axis = cross(y_axis, z_axis);
     
+    % Преобразуем координаты
     X = center(1) + x_axis(1)*x_loc + y_axis(1)*y_loc + z_axis(1)*z_loc;
     Y = center(2) + x_axis(2)*x_loc + y_axis(2)*y_loc + z_axis(2)*z_loc;
     Z = center(3) + x_axis(3)*x_loc + y_axis(3)*y_loc + z_axis(3)*z_loc;
 end
-%% === Функция для шума и BER ===
+%% Функция для шума и BER
 function [SNR_dB, BER, C_shannon, Rb] = linkMetrics_LoRa_BER(P_rx_dBm, BW_Hz, SF, CASE, R)
+    % LoRa-ориентированная модель BER с учетом чувствительности и SNR-порогов
      NF_dB = 6;
 switch CASE
     case 1
@@ -632,7 +654,7 @@ switch CASE
     
         % Шумовая мощность
         Pn = k * T * BW_Hz * F;
-        Pn_dBm = 10 * log10(Pn * 1e3);  
+        Pn_dBm = 10 * log10(Pn * 1e3);  % в dBm
     
         % SNR
         SNR_dB = P_rx_dBm(:) - Pn_dBm;
