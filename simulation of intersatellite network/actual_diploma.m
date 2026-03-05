@@ -184,7 +184,7 @@ for i = 1:numNodes
     %     % Запоминаем ориентацию антенны
     %     satellites(i).antennaOrient = M * rotated_orient_local;
 
-        satellites(i).antennaOrient = temp;
+        satellites(i).antennaOrient = -perp_vec;
 end
 
 

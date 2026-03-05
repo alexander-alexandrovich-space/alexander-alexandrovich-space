@@ -7,7 +7,7 @@ M  = 2^SF;
 Ns = M;
 
 Ts = M/BW;
-Fs = BW;
+Fs = 2*BW;
 
 t = (0:Ns-1)/Fs;
 

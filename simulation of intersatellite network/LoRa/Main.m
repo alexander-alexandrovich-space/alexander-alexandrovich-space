@@ -1,15 +1,15 @@
-clear; clc;
+clear; clc;close all;
 
 %% CONFIG
 cfg.SF = 12;
 cfg.BW = 125e3;
 cfg.Fc = 868e6;      % безопасно для Fs=1e6
-cfg.Nsym = 10;
+cfg.Nsym = 1000;
 cfg.Preamble = 8;
-Niter = 100;          % количество итераций на каждую точку
+Niter = 10;          % количество итераций на каждую точку
 
 
-cfg.DopplerHz = 23e3;
+cfg.DopplerHz = 5e3;
 
 
 SNRdB = -40:2:10;    % диапазон SNR
