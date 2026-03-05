@@ -4,13 +4,9 @@ clear; clc;
 cfg.SF = 12;
 cfg.BW = 125e3;
 cfg.Fc = 868e6;      % безопасно для Fs=1e6
-cfg.Nsym = 10;
+cfg.Nsym = 100;
 cfg.Preamble = 8;
-Niter = 100;          % количество итераций на каждую точку
-
-
-cfg.DopplerHz = 23e3;
-
+Niter = 10;          % количество итераций на каждую точку
 
 SNRdB = -40:2:10;    % диапазон SNR
 cfg.ChannelType = 'AWGN';
