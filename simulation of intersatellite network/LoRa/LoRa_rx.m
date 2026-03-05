@@ -5,46 +5,48 @@ BW = cfg.BW;
 
 M  = 2^SF;
 Ns = M;
-Fs = BW;
 
 Ts = M/BW;
+Fs = BW;
 
 t = (0:Ns-1)/Fs;
 
-base = exp(1j*2*pi*(BW/(2*Ts))*t.^2);
-down = conj(base);
+base_chirp = exp(1j*2*pi*(BW/(2*Ts)*t.^2));
+down = conj(base_chirp);
 
-start = cfg.Preamble*Ns + 1;
+start_payload = cfg.Preamble*Ns + 1;
 
 data_hat = zeros(1,cfg.Nsym);
 
 bitErrors = 0;
+totalBits = cfg.Nsym * SF;
 blockErrors = 0;
-totalBits = cfg.Nsym*SF;
 
 for n = 1:cfg.Nsym
     
-    idx = start + (n-1)*Ns;
-    r = rx(idx:idx+Ns-1);
+    idx = start_payload + (n-1)*Ns;
+    rxsym = rx(idx:idx+Ns-1);
     
-    d = r .* down;
+    dechirped = rxsym .* down;
     
-    S = fft(d,M);
-    [~,k] = max(abs(S));
+    spectrum = fft(dechirped, M);
     
-    m_hat = k-1;
+    [~, m_hat] = max(abs(spectrum));
+    m_hat = m_hat - 1;
     
     data_hat(n) = m_hat;
     
-    err = bitxor(uint32(data_tx(n)),uint32(m_hat));
+    % BER
+    err = bitxor(uint32(data_tx(n)), uint32(m_hat));
     bitErrors = bitErrors + sum(bitget(err,1:SF));
     
-    if err~=0
-        blockErrors = blockErrors+1;
+    if err ~= 0
+        blockErrors = blockErrors + 1;
     end
+    
 end
 
-BER = bitErrors/totalBits;
-BLER = blockErrors/cfg.Nsym;
+BER  = bitErrors / totalBits;
+BLER = blockErrors / cfg.Nsym;
 
 end
