@@ -7,6 +7,15 @@ freq = 868e6;                % Частота передачи (868 MHz)
 Gtx=2;
 Grx=2;
 
+c=3e8;
+SF =12;
+BW = 125000;
+
+CodeRateFec = 4/8;
+CodeRateNoFec = 1;
+
+CODERATE=CodeRateFec;
+
 rng(42); % сид
 %% === Физические параметры и настройки орбитальной модели ===
 mu = 3.986004418e14;    % Гравитационный параметр Земли, м^3/с^2
@@ -18,7 +27,7 @@ r_orbits = [(160000+2200000)/2+6400000];  %  орбитальные радиус
 t = 100000;  % например, через 1000 секунд после начального момента
 
 %% === Параметры размещения спутников ===
-numPerOrbit = 28;  % число спутников на каждой орбите
+numPerOrbit = 50;  % число спутников на каждой орбите
 
 % Для каждой группы орбит будем генерировать спутники для 3 типов:
 % 1. Экваториальные: i = 0, RAAN = 0.
@@ -137,9 +146,6 @@ min_gain_dB = -20;      % минимальное усиление (дБ)
 attenuation_dB = zeros(numNodes);
 
 
-% Поворот вокруг радиус-вектора
-
-beta_angle = deg2rad(90);
 
 % Для каждого спутника вычисляем вектор ориентации (по направлению движения)
 for i = 1:numNodes
@@ -155,25 +161,30 @@ for i = 1:numNodes
     vel = cross(normal, pos);
     v_dir = vel / norm(vel);
     
-    satellites(i).antennaOrient = v_dir;
+    v_dir = v_dir / norm(v_dir);
     
+    % phi = 2*pi*rand();   % случайный угол [0, 2π)
+    % 
      %  Находим вектор в плоскости орбиты, перпендикулярный радиальному
         perp_vec = cross(normal, v_dir);
         perp_vec = perp_vec / norm(perp_vec);
-        
-        %  Матрица поворота
-        R = [cos(beta_angle) -sin(beta_angle) 0;
-             sin(beta_angle)  cos(beta_angle) 0;
-             0               0              1];
-        
-        % Преобразуем базис: [v_dir, perp_vec, n_vec] -> [x,y,z]
-        M = [ v_dir perp_vec normal];
-        
-        % Поворачиваем вектор ориентации
-        rotated_orient_local = R * [0; 0; 1];  
 
-        % Запоминаем ориентацию антенны
-        satellites(i).antennaOrient = M * rotated_orient_local;
+        tmp = randn(3,1);
+
+        % Делаем его перпендикулярным v_dir
+        temp = tmp - perp_vec*(perp_vec.'*tmp);
+        temp = temp / norm(temp);
+    % 
+    %     % Преобразуем базис: [v_dir, perp_vec, n_vec] -> [x,y,z]
+    %     M = [ v_dir perp_vec normal];
+    % 
+    %     % Поворачиваем вектор ориентации
+    %     rotated_orient_local =  [0; 0; 1];  
+    % 
+    %     % Запоминаем ориентацию антенны
+    %     satellites(i).antennaOrient = M * rotated_orient_local;
+
+        satellites(i).antennaOrient = temp;
 end
 
 
@@ -207,14 +218,7 @@ end
   
    
 %% === Вычисление дальности связи и построение связей ===
-c=3e8;
-SF =12;
-BW = 125000;
 
-CodeRateFec = 4/8;
-CodeRateNoFec = 1;
-
-CODERATE=CodeRateFec;
 
 CASE=1; % 1- эмпирическая инженерная модель, 2 - q-функция; A*exp(margin*B)
 % margin - на сколько дб выше порогового с-ш, А - пороговая BERмощностит апмпапаот, B: BER=A*e^-margin*B

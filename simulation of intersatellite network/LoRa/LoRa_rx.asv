@@ -1,0 +1,97 @@
+function results = LoRa_rx(cfg)
+
+% cfg.SF
+% cfg.BW
+% cfg.Fs
+% cfg.SNRdB      (вектор SNR для симуляции)
+% cfg.Nsym
+% cfg.plotBER    (true/false)
+
+SF  = cfg.SF;
+BW  = cfg.BW;
+Fs  = cfg.Fs;
+Nsym = cfg.Nsym;
+
+M = 2^SF;
+Ts = M/BW;
+Ns = round(Ts*Fs);
+
+t = (0:Ns-1)/Fs;
+k = BW/Ts;
+
+%% Base chirp
+up = exp(1j*2*pi*(0.5*k*t.^2 - BW/2*t));
+down = conj(up);
+
+BER = zeros(size(SNRdB));
+BLER = zeros(size(SNRdB));
+
+for s = 1:length(SNRdB)
+    
+    bitErrors = 0;
+    blockErrors = 0;
+    totalBits = 0;
+    
+    %% Random data
+    data = randi([0 M-1],1,Nsym);
+    
+    tx = [];
+    for m = data
+        sym = up .* exp(1j*2*pi*(m/Ts)*t);
+        tx = [tx sym];
+    end
+       
+    %% Receiver
+    for n = 1:Nsym
+        
+        idx1 = (n-1)*Ns + 1;
+        idx2 = n*Ns;
+        
+        rxsym = rx(idx1:idx2);
+        
+        % Dechirp
+        dechirped = rxsym .* down;
+        
+        % FFT detection
+        spectrum = fft(dechirped,M);
+        [~,m_hat] = max(abs(spectrum));
+        m_hat = m_hat - 1;
+        
+        % Bit compare
+        bits_tx = de2bi(data(n),SF,'left-msb');
+        bits_rx = de2bi(m_hat,SF,'left-msb');
+        
+        err = sum(bits_tx ~= bits_rx);
+        
+        bitErrors = bitErrors + err;
+        totalBits = totalBits + SF;
+        
+        if err > 0
+            blockErrors = blockErrors + 1;
+        end
+        
+    end
+    
+    BER(s)  = bitErrors / totalBits;
+    BLER(s) = blockErrors / Nsym;
+    
+end
+
+results.BER = BER;
+results.BLER = BLER;
+
+%% Optional plotting
+if cfg.plotBER
+    
+    figure;
+    semilogy(SNRdB,BER,'-o'); hold on;
+    semilogy(SNRdB,BLER,'-s');
+    grid on;
+    xlabel('SNR (dB)');
+    ylabel('Error Rate');
+    legend('BER','BLER');
+    title(['LoRa SF=',num2str(SF)]);
+    
+end
+
+end
