@@ -12,8 +12,7 @@ Fs = BW;
 t = (0:Ns-1)/Fs;
 
 % Правильный upchirp (стандартная форма)
-base_chirp = exp(1j*2*pi*(BW/(2*Ts)*t.^2));
-
+base_chirp = exp(1j*2*pi*(-BW/2*t + BW/(2*Ts)*t.^2));
 data = randi([0 M-1],1,cfg.Nsym);
 
 tx = [];

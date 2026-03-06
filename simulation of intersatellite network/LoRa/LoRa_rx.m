@@ -11,7 +11,7 @@ Fs = BW;
 
 t = (0:Ns-1)/Fs;
 
-base_chirp = exp(1j*2*pi*(BW/(2*Ts)*t.^2));
+base_chirp = exp(1j*2*pi*(-BW/2*t + BW/(2*Ts)*t.^2));
 down = conj(base_chirp);
 
 start_payload = cfg.Preamble*Ns + 1;

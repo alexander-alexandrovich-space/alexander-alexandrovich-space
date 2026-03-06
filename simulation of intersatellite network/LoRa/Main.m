@@ -9,7 +9,7 @@ cfg.Preamble = 8;
 Niter = 10;          % количество итераций на каждую точку
 
 
-cfg.DopplerHz = 5e3;
+%cfg.DopplerHz = 5e3;
 
 
 SNRdB = -40:2:10;    % диапазон SNR
