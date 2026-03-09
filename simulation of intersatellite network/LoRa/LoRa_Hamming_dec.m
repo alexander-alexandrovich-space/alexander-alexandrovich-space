@@ -35,7 +35,7 @@ for k = 1:Nblk
     if CR >= 3
         s3 = mod(p3 + cw(7),2);
     else
-       CR = 0;
+       s3 = 0;
     end
     
     syndrome = s1 + 2*s2 + 4*s3;
