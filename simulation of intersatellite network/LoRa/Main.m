@@ -7,7 +7,7 @@ cfg.Fc = 868e6;      % безопасно для Fs=1e6
 cfg.Nsym = 10;
 cfg.Preamble = 8;
 cfg.graph = false;
-cfg.FEC = true;
+cfg.FEC = false;
 cfg.CR = 4;
 Niter = 10;          % количество итераций на каждую точку
 
@@ -30,13 +30,13 @@ for s = 1:length(SNRdB)
     for k = 1:Niter
         
         % --- TX ---
-        [tx, data_tx, data_coded] = LoRa_tx(cfg);
+        [tx, data_tx, data_sym] = LoRa_tx(cfg);
         
         % --- CHANNEL ---
-        rx = channel(tx,cfg,SNRdB(s));
-        %rx = tx;
+        %rx = channel(tx,cfg,SNRdB(s));
+        rx = tx;
         % --- RX ---
-        [data_decoded, BER, BLER] = LoRa_rx(rx, data_tx, cfg);
+        [data_decoded, BER, BLER] = LoRa_rx(rx, data_sym, cfg);
         
         BER_acc  = BER_acc  + BER;
         BLER_acc = BLER_acc + BLER;
