@@ -1,4 +1,4 @@
-function [tx, data] = LoRa_tx(cfg)
+function [tx, data_tx, data] = LoRa_tx(cfg)
 
 SF = cfg.SF;
 BW = cfg.BW;
@@ -13,15 +13,24 @@ t = (0:Ns-1)/Fs;
 
 % Правильный upchirp (стандартная форма)
 base_chirp = exp(1j*2*pi*(-BW/2*t + BW/(2*Ts)*t.^2));
-data = randi([0 M-1],1,cfg.Nsym);
+
+data_tx = randi([0 1],1,cfg.Nsym*SF);
+
+if cfg.FEC
+    data = LoRa_Hamming_enc(data_tx,cfg.CR);
+else
+    data = data_tx;
+end
 
 tx = [];
 
 for m = data
     % Циклический сдвиг через умножение
     symbol = base_chirp .* exp(1j*2*pi*m/M*(0:Ns-1));
+    symbol = symbol(:).';
     tx = [tx symbol];
 end
+
 
 % Preamble
 preamble = repmat(base_chirp,1,cfg.Preamble);

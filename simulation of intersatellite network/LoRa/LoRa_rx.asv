@@ -1,4 +1,4 @@
-function [m_hat, BER, BLER] = LoRa_rx(rx, data_tx, cfg)
+function [all_rx_bits, BER, BLER] = LoRa_rx(rx, data_tx, cfg)
 
 SF = cfg.SF;
 BW = cfg.BW;
@@ -38,22 +38,23 @@ for n = 1:cfg.Nsym
     
     data_hat(n) = m_hat;
     
-
-
-     if cfg.FEC
-        m_hat = LoRa_Hamming_dec(m_hat, cfg.CR); % m_hat → исправленный символ
-     else 
-          % BER
-        err = bitxor(uint32(data_tx(n)), uint32(m_hat));
-        bitErrors = bitErrors + sum(bitget(err,1:SF));
-     end
-
+    % BER
+    err = bitxor(uint32(data_tx(n)), uint32(m_hat));
+    bitErrors = bitErrors + sum(bitget(err,1:SF));
     
     if err ~= 0
         blockErrors = blockErrors + 1;
     end
     
-end
+    bend
+
+if cfg.FEC
+        
+    
+
+   BER = 0;
+   BLER = 0;
+else
 
 BER  = bitErrors / totalBits;
 BLER = blockErrors / cfg.Nsym;
