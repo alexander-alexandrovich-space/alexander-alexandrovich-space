@@ -6,6 +6,7 @@ cfg.BW = 125e3;
 cfg.Fc = 868e6;      % безопасно для Fs=1e6
 cfg.Nsym = 1000;
 cfg.Preamble = 8;
+cfg.graph = false;
 Niter = 10;          % количество итераций на каждую точку
 
 
@@ -64,3 +65,16 @@ ylabel('Error Rate');
 legend('BLER');
 title(['LoRa BLER curve | SF = ', num2str(cfg.SF)]);
 xlim([-40,20]);
+%%
+close all;
+
+cfg.SF = 12;
+cfg.BW = 125e3;
+cfg.Fc = 868e6;      % безопасно для Fs=1e6
+cfg.Nsym = 1000;
+cfg.Preamble = 8;
+cfg.graph = false;
+Niter = 10;          % количество итераций на каждую точку
+
+cfg.graph = true;
+[tx, data_tx] = LoRa_tx(cfg);
