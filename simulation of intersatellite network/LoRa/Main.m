@@ -4,7 +4,7 @@ clear; clc;close all;
 cfg.SF = 12;
 cfg.BW = 125e3;
 cfg.Fc = 868e6;      % безопасно для Fs=1e6
-cfg.Nsym = 10;
+cfg.Nsym = 1000;
 cfg.Preamble = 8;
 cfg.graph = false;
 cfg.FEC = false;
@@ -15,40 +15,43 @@ Niter = 10;          % количество итераций на каждую �
 %cfg.DopplerHz = 5e3;
 
 
-SNRdB = -40:2:10;    % диапазон SNR
+SNRdB = -30:1:10;    % диапазон SNR
 cfg.ChannelType = 'AWGN';
 
 BER_curve  = zeros(size(SNRdB));
 BLER_curve = zeros(size(SNRdB));
 
+
+
 % LOOP OVER SNR
 for s = 1:length(SNRdB)
     
-    BER_acc  = 0;
-    BLER_acc = 0;
-    
+  
     for k = 1:Niter
         
         % --- TX ---
-        [tx, data_tx, data_sym] = LoRa_tx(cfg);
+        [tx, data_tx] = LoRa_tx(cfg);
         
         % --- CHANNEL ---
-        %rx = channel(tx,cfg,SNRdB(s));
-        rx = tx;
+        rx = channel(tx,cfg,SNRdB(s));
+        %rx = tx;
         % --- RX ---
-        [data_decoded, BER, BLER] = LoRa_rx(rx, data_sym, cfg);
+        [BER, BLER] = LoRa_rx(rx, data_tx, cfg);
         
-        BER_acc  = BER_acc  + BER;
-        BLER_acc = BLER_acc + BLER;
+        BER_acc=BER;
+        BLER_acc=BLER;
+    
         
     end
     
-    BER_curve(s)  = BER_acc  / Niter;
-    BLER_curve(s) = BLER_acc / Niter;
-    
+   BER_curve(s)  = BER_acc  / Niter;
+   BLER_curve(s) = BLER_acc / Niter;
+
     fprintf('SNR = %d dB | BER = %.3e | BLER = %.3e\n', ...
             SNRdB(s), BER_curve(s), BLER_curve(s));
+
 end
+
 
 % PLOT
 figure;
