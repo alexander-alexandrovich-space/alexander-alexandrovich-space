@@ -1,4 +1,4 @@
-function [tx, data_tx, data_sym] = LoRa_tx(cfg)
+function [tx, data_tx, coded_bits] = LoRa_tx(cfg)
 
 SF = cfg.SF;
 BW = cfg.BW;
@@ -16,12 +16,15 @@ base_chirp = exp(1j*2*pi*(-BW/2*t + BW/(2*Ts)*t.^2));
 data_tx = randi([0 1],1,cfg.Nsym*SF);
 
 if cfg.FEC
-    data_bits = LoRa_Hamming_enc(data_tx,cfg.CR);
+    coded_bits = LoRa_Hamming_enc(data_tx,cfg.CR);
+    data_sym = bi2de(reshape(coded_bits,SF,[]).','left-msb');
+
 else
     data_bits = data_tx;
+    data_sym = bi2de(reshape(data_bits,SF,[]).','left-msb');
+    coded_bits = 0;
 end
 
-data_sym = bi2de(reshape(data_bits,SF,[]).','left-msb');
 
 tx = [];
 

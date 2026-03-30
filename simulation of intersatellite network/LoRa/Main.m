@@ -7,16 +7,17 @@ cfg.Fc = 868e6;      % безопасно для Fs=1e6
 cfg.Nsym = 1000;
 cfg.Preamble = 8;
 cfg.graph = false;
-cfg.FEC = false;
+cfg.FEC = true;
 cfg.CR = 4;
 Niter = 10;          % количество итераций на каждую точку
 
 
-%cfg.DopplerHz = 5e3;
+%cfg.DopplerHz = 70;
 
 
-SNRdB = -30:1:10;    % диапазон SNR
-cfg.ChannelType = 'AWGN';
+SNRdB = -30;    % диапазон SNR
+%cfg.ChannelType = 'AWGN';
+
 
 BER_curve  = zeros(size(SNRdB));
 BLER_curve = zeros(size(SNRdB));
@@ -33,8 +34,8 @@ for s = 1:length(SNRdB)
         [tx, data_tx] = LoRa_tx(cfg);
         
         % --- CHANNEL ---
-        rx = channel(tx,cfg,SNRdB(s));
-        %rx = tx;
+        %rx = channel(tx,cfg,SNRdB(s));
+        rx = tx;
         % --- RX ---
         [BER, BLER] = LoRa_rx(rx, data_tx, cfg);
         

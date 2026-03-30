@@ -30,6 +30,11 @@ function [BER, BLER] = LoRa_rx(rx, data_tx, cfg)
         
     end
     
+    
+ if cfg.FEC
+      rx_bits = LoRa_Hamming_dec(rx_bits,cfg.CR);  
+ end
+     
     % --- Вычисление ошибок ---
     totalBits = cfg.Nsym * SF;
     
@@ -47,5 +52,7 @@ function [BER, BLER] = LoRa_rx(rx, data_tx, cfg)
     % то символ считается ошибочным. Суммируем ошибочные символы.
     blockErrors = sum(any(rx_matrix ~= tx_matrix, 1));
     BLER = blockErrors / cfg.Nsym;
+
+ 
 
 end
