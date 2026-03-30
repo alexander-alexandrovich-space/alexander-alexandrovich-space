@@ -1,4 +1,4 @@
-function [ all_rx_bits, BER, BLER] = LoRa_rx(rx, data_tx, cfg)
+function [BER, BLER] = LoRa_rx(rx, data_tx, cfg)
 
 SF = cfg.SF;
 BW = cfg.BW;
@@ -20,23 +20,23 @@ bitErrors = 0;
 totalBits = cfg.Nsym * SF;
 blockErrors = 0;
 
-all_rx_bits = zeros(1, cfg.Nsym*SF);
 
+rx_bits = [];
+data_hat = zeros(1,cfg.Nsym);
 for n = 1:cfg.Nsym
     
     idx = start_payload + (n-1)*Ns;
-    rxsym = rx(idx:idx+Ns-1);
+    rxsym = rx(idx:idx+Ns-1); 
     
     dechirped = rxsym .* down;
-    
     spectrum = fft(dechirped, M);
     
     [~, m_hat] = max(abs(spectrum));
     m_hat = m_hat - 1;
-    
+    data_hat(n) = m_hat;
     bits = de2bi(m_hat,SF,'left-msb');
-
-%    
+    bits = bits(:).';
+    rx_bits = [rx_bits bits];
     
 end
 

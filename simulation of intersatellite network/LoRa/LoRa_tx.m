@@ -25,8 +25,8 @@ data_sym = bi2de(reshape(data_bits,SF,[]).','left-msb');
 
 tx = [];
 
-for m = data_sym
-    symbol = base_chirp .* exp(1j*2*pi*m/M*(0:Ns-1));
+for m = data_sym.'
+    symbol = circshift(base_chirp,-m);
     symbol = symbol(:).';
     tx = [tx symbol];
 end

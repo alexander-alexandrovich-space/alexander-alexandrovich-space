@@ -10,8 +10,8 @@ Ts = M/BW;
 Fs = BW;
 t = (0:Ns-1)/Fs;
 base_chirp = exp(1j*2*pi*(-BW/2*t + BW/(2*Ts)*t.^2));
-cfg.Nsym = 1;
-cfg.Preamble = 1;
+cfg.Nsym = 10;
+cfg.Preamble = 8;
 data_tx = randi([0 1],1,cfg.Nsym*SF);
 data_sym = bi2de(reshape(data_tx,SF,[]).','left-msb');
 
