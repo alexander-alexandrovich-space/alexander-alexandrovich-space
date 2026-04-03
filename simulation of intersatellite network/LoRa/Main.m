@@ -4,15 +4,15 @@ clear; clc;close all;
 cfg.SF = 12;
 cfg.BW = 125e3;
 cfg.Fc = 868e6;      % безопасно для Fs=1e6
-cfg.Nsym = 300;
+cfg.Nsym = 100;
 cfg.Preamble = 8;
-cfg.graph = false;
+cfg.graph = true;
 cfg.FEC = true;
-Niter = 100;          % количество итераций на каждую точку
+Niter = 10;          % количество итераций на каждую точку
 
 rng(42);
 
-%cfg.DopplerHz = 70;
+cfg.DopplerHz = 20;
 
 CR_modes = [0 4];
 
@@ -20,7 +20,7 @@ legend_str = cell(1, length(CR_modes));
 figure(1); hold on; grid on; title('LoRa BER curve'); xlabel('SNR (dB)'); ylabel('BER'); set(gca, 'YScale', 'log');
 figure(2); hold on; grid on; title('LoRa BLER curve'); xlabel('SNR (dB)'); ylabel('BLER'); set(gca, 'YScale', 'log');
 
-SNRdB = -30:1:-6;    % диапазон SNR
+SNRdB = -30:1:-15;    % диапазон SNR
 cfg.ChannelType = 'AWGN';
 
 
@@ -73,7 +73,6 @@ cfg.CR = CR_modes(CR_id);
     figure(1); plot(SNRdB, BER_curve, 'Marker', 'o', 'LineWidth', 2);
     figure(2); plot(SNRdB, BLER_curve, 'Marker', 's', 'LineWidth', 2);
 end
-
 
 figure(1); legend(legend_str, 'Location', 'southwest'); ylim([1e-4, 1]);
 figure(2); legend(legend_str, 'Location', 'southwest'); ylim([1e-4, 1]);
