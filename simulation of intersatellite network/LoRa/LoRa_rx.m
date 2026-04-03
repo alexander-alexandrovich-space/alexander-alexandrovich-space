@@ -1,4 +1,4 @@
-function [BER, BLER] = LoRa_rx(rx, data_tx, cfg)
+function [BER, BLER] = LoRa_rx(rx, data_tx, cfg, Nsym_tx)
     SF = cfg.SF;
     BW = cfg.BW;
     M  = 2^SF;
@@ -10,11 +10,9 @@ function [BER, BLER] = LoRa_rx(rx, data_tx, cfg)
     down = conj(base_chirp);
     start_payload = cfg.Preamble*Ns + 1;
     
-    rx_bits = [];
-    data_hat = zeros(1,cfg.Nsym);
+    rx_bits = zeros(1, Nsym_tx * SF);
     
-    for n = 1:cfg.Nsym
-        
+    for n = 1:Nsym_tx
         idx = start_payload + (n-1)*Ns;
         rxsym = rx(idx:idx+Ns-1); 
         
@@ -23,36 +21,34 @@ function [BER, BLER] = LoRa_rx(rx, data_tx, cfg)
         
         [~, m_hat] = max(abs(spectrum));
         m_hat = m_hat - 1;
-        data_hat(n) = m_hat;
-        bits = de2bi(m_hat,SF,'left-msb');
-        bits = bits(:).';
-        rx_bits = [rx_bits bits];
         
+        bits = de2bi(m_hat, SF, 'left-msb');
+        rx_bits((n-1)*SF + 1 : n*SF) = bits;
     end
     
-    
- if cfg.FEC
-      rx_bits = LoRa_Hamming_dec(rx_bits,cfg.CR);  
- end
+    if cfg.FEC
+        % Отбрасываем паддинг, чтобы длина была кратна блоку Хэмминга (4+CR)
+        valid_coded_len = floor(length(rx_bits) / (4+cfg.CR)) * (4+cfg.CR);
+        rx_coded_bits = rx_bits(1:valid_coded_len);
+        
+        rx_data_bits = LoRa_Hamming_dec(rx_coded_bits, cfg.CR);  
+        % Отсекаем лишнее до оригинального размера data_tx
+        rx_data_bits = rx_data_bits(1:length(data_tx));
+    else
+        rx_data_bits = rx_bits(1:length(data_tx));
+    end
      
-    % --- Вычисление ошибок ---
-    totalBits = cfg.Nsym * SF;
-    
     % 1. Битовая ошибка (BER)
-    % Считаем количество несовпадающих бит
-    bitErrors = sum(rx_bits ~= data_tx); 
-    BER = bitErrors / totalBits;
+    bitErrors = sum(rx_data_bits ~= data_tx); 
+    BER = bitErrors / length(data_tx);
     
-    % 2. Блоковая (символьная) ошибка (BLER)
-    % Преобразуем массивы в матрицы, где каждый столбец = 1 символ (длиной SF)
-    rx_matrix = reshape(rx_bits, SF, []);
-    tx_matrix = reshape(data_tx, SF, []);
-
-    % Если хотя бы один бит в столбце (символе) не совпадает (any(..., 1)),
-    % то символ считается ошибочным. Суммируем ошибочные символы.
+    % 2. Блоковая ошибка (BLER) 
+    % Группируем по 4 бита (информационное слово) для справедливого сравнения
+    len = length(data_tx);
+    len = len - mod(len, 4);
+    rx_matrix = reshape(rx_data_bits(1:len), 4, []);
+    tx_matrix = reshape(data_tx(1:len), 4, []);
+    
     blockErrors = sum(any(rx_matrix ~= tx_matrix, 1));
-    BLER = blockErrors / cfg.Nsym;
-
- 
-
+    BLER = blockErrors / size(tx_matrix, 2);
 end

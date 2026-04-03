@@ -56,7 +56,7 @@ end
 % 3) Добавление AWGN
 %% =========================
     Es = mean(abs(tx).^2);
-    Eb = Es / cfg.SF;
+    %Eb = Es / cfg.SF;
 
     SNR_linear = 10^(SNRdB/10);
     N0 = Es / SNR_linear; % итерируюсь по SNR

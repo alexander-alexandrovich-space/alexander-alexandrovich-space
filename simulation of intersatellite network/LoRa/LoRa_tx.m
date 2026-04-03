@@ -1,76 +1,40 @@
-function [tx, data_tx, coded_bits] = LoRa_tx(cfg)
-
-SF = cfg.SF;
-BW = cfg.BW;
-
-M  = 2^SF;
-Ns = M;
-
-Ts = M/BW;
-Fs = BW;
-
-t = (0:Ns-1)/Fs;
-
-base_chirp = exp(1j*2*pi*(-BW/2*t + BW/(2*Ts)*t.^2));
-
-data_tx = randi([0 1],1,cfg.Nsym*SF);
-
-if cfg.FEC
-    coded_bits = LoRa_Hamming_enc(data_tx,cfg.CR);
-    data_sym = bi2de(reshape(coded_bits,SF,[]).','left-msb');
-
-else
-    data_bits = data_tx;
-    data_sym = bi2de(reshape(data_bits,SF,[]).','left-msb');
-    coded_bits = 0;
-end
-
-
-tx = [];
-
-for m = data_sym.'
-    symbol = circshift(base_chirp,-m);
-    symbol = symbol(:).';
-    tx = [tx symbol];
-end
-
-preamble = repmat(base_chirp,1,cfg.Preamble);
-tx = [preamble tx];
-
-%%
-if cfg.graph
-    Fc = 868e6;
-    t = (0:length(tx)-1)/Fs;
-    rf = real(tx .* exp(1j*2*pi*Fc*t));
+function [tx, data_tx, Nsym_tx] = LoRa_tx(cfg)
+    SF = cfg.SF;
+    BW = cfg.BW;
+    M  = 2^SF;
+    Ns = M;
+    Ts = M/BW;
+    Fs = BW;
+    t = (0:Ns-1)/Fs;
+    base_chirp = exp(1j*2*pi*(-BW/2*t + BW/(2*Ts)*t.^2));
     
-    figure;
-    plot(t(1:1000), rf(1:1000));
-    grid on;
-    xlabel('Time (s)');
-    ylabel('Amplitude');
-    title('LoRa RF Signal (Time Domain)');
+    target_bits = cfg.Nsym * SF;
     
-    N = length(rf);
-    f = (-N/2:N/2-1)*(Fs/N);
+    if cfg.FEC
+        % Рассчитываем количество бит так, чтобы на выходе получить примерно Nsym символов
+        num_data_bits = floor(target_bits * 4 / (4 + cfg.CR));
+        num_data_bits = num_data_bits - mod(num_data_bits, 4); % Кратность 4
+        data_tx = randi([0 1], 1, num_data_bits);
+        coded_bits = LoRa_Hamming_enc(data_tx, cfg.CR);
+    else
+        data_tx = randi([0 1], 1, target_bits);
+        coded_bits = data_tx;
+    end
     
-    RF_spectrum = fftshift(abs(fft(rf)));
+    % Паддинг до кратности SF
+    pad_len = mod(SF - mod(length(coded_bits), SF), SF);
+    if pad_len == SF, pad_len = 0; end
+    coded_bits_padded = [coded_bits zeros(1, pad_len)];
     
-    figure;
-    plot(Fc + f, 20*log10(RF_spectrum));
-    grid on;
-    xlabel('Frequency (Hz)');
-    ylabel('Magnitude (dB)');
-    title('LoRa Spectrum around Carrier');
+    Nsym_tx = length(coded_bits_padded) / SF; % Сообщаем приемнику, сколько символов ждать
+    data_sym = bi2de(reshape(coded_bits_padded, SF, []).', 'left-msb');
     
-    window = 1024;
-    noverlap = 900;
-    nfft = 2048;
+    tx = [];
+    for m = data_sym.'
+        symbol = circshift(base_chirp, -m);
+        tx = [tx symbol(:).'];
+    end
     
-    figure;
-    spectrogram(tx, window, noverlap, nfft, cfg.BW, 'yaxis');
-    colormap jet;
-    colorbar;
-    title('LoRa Baseband Chirp');
-end
-
+    preamble = repmat(base_chirp, 1, cfg.Preamble);
+    tx = [preamble tx];
 end
