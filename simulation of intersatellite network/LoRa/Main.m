@@ -10,10 +10,11 @@ cfg.graph = false;
 cfg.FEC = true;
 Niter = 100;          % количество итераций на каждую точку
 
+rng(42);
 
 %cfg.DopplerHz = 70;
 
-CR_modes = [0 1 2 3 4];
+CR_modes = [0 4];
 
 legend_str = cell(1, length(CR_modes));
 figure(1); hold on; grid on; title('LoRa BER curve'); xlabel('SNR (dB)'); ylabel('BER'); set(gca, 'YScale', 'log');

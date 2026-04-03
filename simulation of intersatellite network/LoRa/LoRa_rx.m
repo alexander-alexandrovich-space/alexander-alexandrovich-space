@@ -27,23 +27,45 @@ function [BER, BLER] = LoRa_rx(rx, data_tx, cfg, Nsym_tx)
     end
     
     if cfg.FEC
-        % Отбрасываем паддинг, чтобы длина была кратна блоку Хэмминга (4+CR)
-        valid_coded_len = floor(length(rx_bits) / (4+cfg.CR)) * (4+cfg.CR);
-        rx_coded_bits = rx_bits(1:valid_coded_len);
+        % 1. ДЕИНТЕРЛИВЕР
+        N_blocks = Nsym_tx / (4 + cfg.CR);
+        bits_per_block = SF * (4 + cfg.CR);
+        deinterleaved_bits = zeros(1, length(rx_bits));
         
-        rx_data_bits = LoRa_Hamming_dec(rx_coded_bits, cfg.CR);  
-        % Отсекаем лишнее до оригинального размера data_tx
+        for b = 1:N_blocks
+            idx = (b-1)*bits_per_block + 1 : b*bits_per_block;
+            block = rx_bits(idx);
+            
+            % Восстанавливаем сдвинутую матрицу
+            cw_matrix_shifted = reshape(block, SF, 4 + cfg.CR);
+            
+            % Циклический сдвиг строк вправо (возвращаем на исходные места)
+            for i = 1:SF
+                cw_matrix_shifted(i, :) = circshift(cw_matrix_shifted(i, :), [0, i-1]);
+            end
+            
+            % Считывание по строкам: восстанавливаем последовательность кодовых слов
+            cw_matrix_orig = cw_matrix_shifted.';
+            deinterleaved_bits(idx) = cw_matrix_orig(:).';
+        end
+        
+        % 2. ДЕКОДИРОВАНИЕ
+        rx_data_bits = LoRa_Hamming_dec(deinterleaved_bits, cfg.CR);
+        
+        % 3. ОТСЕЧЕНИЕ ПАДДИНГА
+        % Восстанавливаем оригинальную длину переданных данных
         rx_data_bits = rx_data_bits(1:length(data_tx));
     else
         rx_data_bits = rx_bits(1:length(data_tx));
     end
      
+    % --- Вычисление ошибок ---
     % 1. Битовая ошибка (BER)
     bitErrors = sum(rx_data_bits ~= data_tx); 
     BER = bitErrors / length(data_tx);
     
     % 2. Блоковая ошибка (BLER) 
-    % Группируем по 4 бита (информационное слово) для справедливого сравнения
+    % Группируем по 4 бита (информационное слово)
     len = length(data_tx);
     len = len - mod(len, 4);
     rx_matrix = reshape(rx_data_bits(1:len), 4, []);

@@ -8,26 +8,59 @@ function [tx, data_tx, Nsym_tx] = LoRa_tx(cfg)
     t = (0:Ns-1)/Fs;
     base_chirp = exp(1j*2*pi*(-BW/2*t + BW/(2*Ts)*t.^2));
     
-    target_bits = cfg.Nsym * SF;
-    
     if cfg.FEC
-        % Рассчитываем количество бит так, чтобы на выходе получить примерно Nsym символов
-        num_data_bits = floor(target_bits * 4 / (4 + cfg.CR));
-        num_data_bits = num_data_bits - mod(num_data_bits, 4); % Кратность 4
-        data_tx = randi([0 1], 1, num_data_bits);
-        coded_bits = LoRa_Hamming_enc(data_tx, cfg.CR);
+        % Целевое количество данных (чтобы получить примерно Nsym символов)
+        target_data_bits = floor(cfg.Nsym * 4 * SF / (4 + cfg.CR));
+        data_tx = randi([0 1], 1, target_data_bits);
+        
+        % 1. ПАДДИНГ (ДО кодирования)
+        % Блок интерливера = SF кодовых слов по (4+CR) бит.
+        % Для этого нужно ровно (4 * SF) информационных бит на блок.
+        block_data_size = 4 * SF;
+        pad_len = mod(block_data_size - mod(length(data_tx), block_data_size), block_data_size);
+        if pad_len == block_data_size, pad_len = 0; end
+        
+        data_tx_padded = [data_tx, zeros(1, pad_len)];
+        
+        % 2. КОДИРОВАНИЕ
+        coded_bits = LoRa_Hamming_enc(data_tx_padded, cfg.CR);
+        
+        % 3. ИНТЕРЛИВЕР (Диагональное перемежение)
+        N_blocks = length(coded_bits) / (SF * (4 + cfg.CR));
+        interleaved_bits = zeros(size(coded_bits));
+        bits_per_block = SF * (4 + cfg.CR);
+        
+        for b = 1:N_blocks
+            idx = (b-1)*bits_per_block + 1 : b*bits_per_block;
+            block = coded_bits(idx);
+            
+            % Формируем матрицу: строки = кодовые слова, столбцы = биты кодового слова
+            cw_matrix = reshape(block, 4 + cfg.CR, SF).';
+            
+            % Циклический сдвиг строк влево (диагонализация)
+            for i = 1:SF
+                cw_matrix(i, :) = circshift(cw_matrix(i, :), [0, -(i-1)]);
+            end
+            
+            % Считывание по столбцам: каждый столбец (SF бит) становится LoRa-символом
+            interleaved_bits(idx) = cw_matrix(:).';
+        end
+        
+        symbols_bits = interleaved_bits;
     else
-        data_tx = randi([0 1], 1, target_bits);
-        coded_bits = data_tx;
+        % Без FEC просто делаем паддинг до кратности SF
+        target_data_bits = cfg.Nsym * SF;
+        data_tx = randi([0 1], 1, target_data_bits);
+        
+        pad_len = mod(SF - mod(length(data_tx), SF), SF);
+        if pad_len == SF, pad_len = 0; end
+        
+        symbols_bits = [data_tx, zeros(1, pad_len)];
     end
     
-    % Паддинг до кратности SF
-    pad_len = mod(SF - mod(length(coded_bits), SF), SF);
-    if pad_len == SF, pad_len = 0; end
-    coded_bits_padded = [coded_bits zeros(1, pad_len)];
-    
-    Nsym_tx = length(coded_bits_padded) / SF; % Сообщаем приемнику, сколько символов ждать
-    data_sym = bi2de(reshape(coded_bits_padded, SF, []).', 'left-msb');
+    % Модуляция
+    Nsym_tx = length(symbols_bits) / SF;
+    data_sym = bi2de(reshape(symbols_bits, SF, []).', 'left-msb');
     
     tx = [];
     for m = data_sym.'
