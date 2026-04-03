@@ -7,6 +7,7 @@ freq = 868e6;                % Частота передачи (868 MHz)
 Gtx=2;
 Grx=2;
 
+
 c=3e8;
 SF =12;
 BW = 125000;
@@ -17,7 +18,7 @@ CodeRateNoFec = 1;
 CODERATE=CodeRateFec;
 
 rng(42); % сид
-%% === Физические параметры и настройки орбитальной модели ===
+
 mu = 3.986004418e14;    % Гравитационный параметр Земли, м^3/с^2
 R_earth = 6400000;      % Радиус Земли, м
 
@@ -26,8 +27,25 @@ r_orbits = [(160000+2200000)/2+6400000];  %  орбитальные радиус
 % Задаем время симуляции (секундах)
 t = 100;  % например, через 1000 секунд после начального момента
 
-%% === Параметры размещения спутников ===
+simulation_mode = 'baseband'; % 'baseband' 
+
+
+cfg.SF = 12;
+cfg.BW = 125e3;
+cfg.Fc = 868e6;      
+cfg.Nsym = 1; % 240 * 2 /12 +8
+cfg.Preamble = 8;
+cfg.CR = 4;
+cfg.FEC = true;
+Niter = 1;          % количество итераций на каждую точку
+cfg.ChannelType = 'AWGN';
+
 numPerOrbit = 28;  % число спутников на каждой орбите
+
+addpath("LoRa");
+
+
+%% === Параметры размещения спутников ===
 
 % Для каждой группы орбит будем генерировать спутники для 3 типов:
 % 1. Экваториальные: i = 0, RAAN = 0.
@@ -220,7 +238,6 @@ end
 %% === Вычисление дальности связи и построение связей ===
 
 
-CASE=1; % 1- эмпирическая инженерная модель, 2 - q-функция; A*exp(margin*B)
 % margin - на сколько дб выше порогового с-ш, А - пороговая BERмощностит апмпапаот, B: BER=A*e^-margin*B
 
 connections = zeros(numNodes);
@@ -237,30 +254,105 @@ FSPLc = 20*log10(4*pi/lambda);
 
 noiseOffset=5;
 
-for i = 1:numNodes
-    for j = i+1:numNodes
+switch simulation_mode
+    case 'estimation'
+        for i = 1:numNodes
+            for j = i+1:numNodes
+                
+                %Рассчет расстояния между узлами
+                dist = norm(nodes(i,:) - nodes(j,:));
+                
+                % рассчет мощности на каждом приемнике
+                rxPower(i,j) = txPower + Gtx + Grx + attenuation_dB(i,j) + attenuation_dB(j,i) - 20*log10(dist) - FSPLc;
+                rxPower(j,i) = txPower + Gtx + Grx + attenuation_dB(i,j) + attenuation_dB(j,i) - 20*log10(dist) - FSPLc;
         
-        %Рассчет расстояния между узлами
-        dist = norm(nodes(i,:) - nodes(j,:));
+                % рассчет метрик
+                [SNR(i,j), BER(i,j), RATE(i,j), LoRalimit(i,j)] = linkMetrics_LoRa_BER(rxPower(i,j),BW,SF, CODERATE);
+                [SNR(j,i), BER(j,i), RATE(j,i), LoRalimit(j,i)] = linkMetrics_LoRa_BER(rxPower(j,i),BW,SF, CODERATE);
         
-        % рассчет мощности на каждом приемнике
-        rxPower(i,j) = txPower + Gtx + Grx + attenuation_dB(i,j) + attenuation_dB(j,i) - 20*log10(dist) - FSPLc;
-        rxPower(j,i) = txPower + Gtx + Grx + attenuation_dB(i,j) + attenuation_dB(j,i) - 20*log10(dist) - FSPLc;
-
-        % рассчет метрик
-        [SNR(i,j), BER(i,j), RATE(i,j), LoRalimit(i,j)] = linkMetrics_LoRa_BER(rxPower(i,j),BW,SF, CASE, CODERATE);
-        [SNR(j,i), BER(j,i), RATE(j,i), LoRalimit(j,i)] = linkMetrics_LoRa_BER(rxPower(j,i),BW,SF, CASE, CODERATE);
-
-        realrange(i,j)=10^((txPower - sensitivity + Gtx + Grx + attenuation_dB(i,j) + attenuation_dB(j,i)  - FSPLc - noiseOffset)/20);              
-        realrange(j,i)=10^((txPower - sensitivity + Gtx + Grx + attenuation_dB(i,j) + attenuation_dB(j,i)  - FSPLc - noiseOffset)/20);
-        if SNR(i,j) >= min_gain_dB && SNR(j,i) >= min_gain_dB && dist<realrange(i,j) && dist<realrange(j,i)
-            connections(i,j)=1;
-            connections(j,i)=1;
-            totalDelay = dist / c; 
-            W(i, j) = totalDelay;
-            W(j, i) = totalDelay;
+                realrange(i,j)=10^((txPower - sensitivity + Gtx + Grx + attenuation_dB(i,j) + attenuation_dB(j,i)  - FSPLc - noiseOffset)/20);              
+                realrange(j,i)=10^((txPower - sensitivity + Gtx + Grx + attenuation_dB(i,j) + attenuation_dB(j,i)  - FSPLc - noiseOffset)/20);
+                if SNR(i,j) >= min_gain_dB && SNR(j,i) >= min_gain_dB && dist<realrange(i,j) && dist<realrange(j,i)
+                    connections(i,j)=1;
+                    connections(j,i)=1;
+                    totalDelay = dist / c; 
+                    W(i, j) = totalDelay;
+                    W(j, i) = totalDelay;
+                end
+            end
         end
-    end
+    case 'baseband'
+           BER_all = zeros(numNodes);
+
+            payload_bits = 240;
+         % Расчет времени в эфире (ToA)
+            coded_bits = payload_bits * (8/4); % CR = 4
+            payload_sym = ceil(coded_bits / cfg.SF); 
+            total_sym = 8 + payload_sym; % Преамбула + данные (без SyncWord для чистой модели)
+            T_sym = (2^cfg.SF) / cfg.BW; 
+            ToA_seconds = total_sym * T_sym; 
+
+         for i = 1:numNodes
+            for j = i+1:numNodes
+                
+                %Рассчет расстояния между узлами
+                dist = norm(nodes(i,:) - nodes(j,:));
+                
+
+
+                % рассчет мощности на каждом приемнике
+                rxPower(i,j) = txPower + Gtx + Grx + attenuation_dB(i,j) + attenuation_dB(j,i) - 20*log10(dist) - FSPLc;
+                rxPower(j,i) = txPower + Gtx + Grx + attenuation_dB(i,j) + attenuation_dB(j,i) - 20*log10(dist) - FSPLc;
+                
+                realrange(i,j)=10^((txPower - sensitivity + Gtx + Grx + attenuation_dB(i,j) + attenuation_dB(j,i)  - FSPLc - noiseOffset)/20);              
+                realrange(j,i)=10^((txPower - sensitivity + Gtx + Grx + attenuation_dB(i,j) + attenuation_dB(j,i)  - FSPLc - noiseOffset)/20);
+                
+                [SNR(i,j), ~, ~, ~] = linkMetrics_LoRa_BER(rxPower(i,j),BW,SF, CODERATE);
+                [SNR(j,i), ~, ~, ~] = linkMetrics_LoRa_BER(rxPower(i,j),BW,SF, CODERATE);
+
+               if cfg.CR == 0
+                    cfg.FEC = false;
+               else
+                    cfg.FEC = true;
+               end
+
+                 BER_acc = 0; 
+                 for k = 1:Niter
+                    % --- TX ---
+                    [tx, data_tx, Nsym_tx] = LoRa_tx(cfg);
+                    
+                    % --- CHANNEL ---
+                    rx = channel(tx,cfg,SNR(i,j));
+                    % --- RX ---
+                    [BER, ~] = LoRa_rx(rx, data_tx, cfg, Nsym_tx);
+                    
+                    BER_acc=BER_acc+BER;
+   
+                 end
+
+                 BER_all(i,j)=BER_acc/Niter;
+                 BER_all(j,i)=BER_acc/Niter;
+
+                 % Генерируем количество ошибок в пакете из 240 бит
+                num_errors = binornd(payload_bits, BER_all(i,j));
+                
+                if (num_errors == 0) && dist<realrange(i,j) && dist<realrange(j,i)
+                    % Ни один бит не повредился. Связь есть!
+                    connections(i,j) = 1;
+                    connections(j,i) = 1; 
+                    
+                    totalDelay = (dist / c) + ToA_seconds; 
+                    W(i, j) = totalDelay;
+                    W(j, i) = totalDelay;
+                else
+                    % Повредился хотя бы 1 бит (или больше). Пакет потерян.
+                    connections(i,j) = 0;
+                    connections(j,i) = 0;
+                    W(i, j) = inf;
+                    W(j, i) = inf;
+                end
+            end
+        end
 end
 
 rr=10^((txPower - sensitivity + Gtx + Grx - FSPLc - noiseOffset)/20);
@@ -375,90 +467,275 @@ end
 
 %% === Моделирование скорости передачи и оценка ошибок для наилучшего маршрута ===
 
-bestpath = shortestpath(G_weight, best_i, best_j);
+switch simulation_mode
+    case 'estimation'
 
-packetSize = 240; % размер пакета в битах
-
-hopBERs = zeros(1, length(bestpath)-1);
-hopSNRs = zeros(1, length(bestpath)-1);
-hopErrors = zeros(1, length(bestpath)-1);
-dataRate = zeros(1, length(bestpath)-1);
-times = zeros(1, length(bestpath)-1);
-
-for k = 1:length(bestpath)-1
-    i1 = bestpath(k);
-    i2 = bestpath(k+1);
-    hopSNRs(k) = SNR(i1,i2);
-    hopBERs(k) = BER(i1,i2);
-    dataRate(k) = LoRalimit(i1,i2);
-    if dataRate(k) > 293
-        dataRate(k)=293;
+    bestpath = shortestpath(G_weight, best_i, best_j);
+    
+    packetSize = 240; % размер пакета в битах
+    
+    hopBERs = zeros(1, length(bestpath)-1);
+    hopSNRs = zeros(1, length(bestpath)-1);
+    hopErrors = zeros(1, length(bestpath)-1);
+    dataRate = zeros(1, length(bestpath)-1);
+    times = zeros(1, length(bestpath)-1);
+    
+    for k = 1:length(bestpath)-1
+        i1 = bestpath(k);
+        i2 = bestpath(k+1);
+        hopSNRs(k) = SNR(i1,i2);
+        hopBERs(k) = BER(i1,i2);
+        dataRate(k) = LoRalimit(i1,i2);
+        if dataRate(k) > 293
+            dataRate(k)=293;
+        end
+        times(k)=packetSize/dataRate(k);
+        errors = binornd(packetSize, BER(i1,i2));
+        hopErrors(k) = errors;
     end
-    times(k)=packetSize/dataRate(k);
-    errors = binornd(packetSize, BER(i1,i2));
-    hopErrors(k) = errors;
+    
+    totalErrors = sum(hopErrors);
+    overallTime = sum(times) + 0.2 * length(bestpath) + totalDelay; 
+    relativeRate = packetSize/overallTime;
+    
+    fprintf('\nСимуляция передачи по "наилучшему" маршруту:\n');
+    for k = 1:length(bestpath)-1
+        fprintf('Хоп от узла %d к узлу %d: SNR = %.2f дБ, BER = %.4e%%, ошибок = %d из %d бит\n', ...
+            bestpath(k), bestpath(k+1), hopSNRs(k), hopBERs(k)*100, hopErrors(k), packetSize);
+    end
+    fprintf('\nОбщее число ошибок по маршруту: %d из %d бит (накоплено по хопам)\n', ...
+        totalErrors, packetSize * (length(bestpath)-1));
+    
+    avgSNR1 = mean (hopSNRs);
+    
+     fprintf('Время передачи пакета: %.3f сек\n', overallTime);
+     fprintf('Эффективная скорость передачи: %.2f бит/сек\n', relativeRate);
+  
+    case 'baseband'
+
+    bestpath = shortestpath(G_weight, best_i, best_j);
+    
+    packetSize = 240; % размер пакета в битах
+    
+    % --- Предварительный расчет физики LoRa для данного пакета ---
+    % Настройки для чистой модели (без SyncWord и скрытых заголовков)
+    coded_bits = packetSize * (8/4); % CR = 4 (расширение в 2 раза)
+    payload_sym = ceil(coded_bits / cfg.SF); 
+    total_sym = cfg.Preamble + payload_sym; % 8 преамбула + данные
+    
+    T_sym = (2^cfg.SF) / cfg.BW;     % Время одного символа
+    ToA_seconds = total_sym * T_sym; % Строгое время пакета в эфире (Time on Air)
+    % -------------------------------------------------------------
+    
+    % Инициализация массивов для статистики маршрута
+    hopBERs = zeros(1, length(bestpath)-1);
+    hopSNRs = zeros(1, length(bestpath)-1);
+    hopErrors = zeros(1, length(bestpath)-1);
+    dataRate = zeros(1, length(bestpath)-1);
+    times = zeros(1, length(bestpath)-1);
+    
+    % Настройка FEC для baseband
+    if cfg.CR == 0
+        cfg.FEC = false;
+    else
+        cfg.FEC = true;
+    end
+    
+    for k = 1:length(bestpath)-1
+        i1 = bestpath(k);
+        i2 = bestpath(k+1);
+        
+        % 1. Расчет SNR для текущего хопа
+        % Предполагается, что матрица rxPower и Pn_dBm уже посчитаны ранее. 
+        % Если нет, можно пересчитать rxPower через txPower и attenuation.
+        hopSNR = SNR(i1,i2);
+        hopSNRs(k) = hopSNR;
+        
+        % 2. BASEBAND СИМУЛЯЦИЯ ПЕРЕДАЧИ (на лету)
+        % --- TX ---
+        [tx, data_tx, Nsym_tx] = LoRa_tx(cfg);
+        
+        % --- CHANNEL ---
+        rx = channel(tx, cfg, hopSNR);
+        
+        % --- RX ---
+        [current_BER, ~] = LoRa_rx(rx, data_tx, cfg, Nsym_tx);
+        hopBERs(k) = current_BER;
+        
+        % 3. Бросок кубика для ошибок пакета через биномиальное распределение
+        hopErrors(k) = binornd(packetSize, current_BER);
+        
+        % 4. Задержки и скорости
+        dist = norm(nodes(i1,:) - nodes(i2,:));
+        propDelay = dist / c; % Задержка распространения радиоволны
+        
+        % Физическая скорость на данном линке = биты / время в эфире
+        currentRate = packetSize / ToA_seconds; 
+        
+        % Убираем искусственное ограничение dataRate > 293, 
+        % так как baseband ToA_seconds дает точную физическую скорость
+        dataRate(k) = currentRate; 
+        
+        % Время на прохождение этого хопа = Эфир + Скорость света
+        times(k) = ToA_seconds + propDelay; 
+    end
+    
+    % Подсчет итогов
+    totalErrors = sum(hopErrors);
+    
+    % Общее время = сумма времени на хопах + время на обработку пакета узлами (0.2s на узел)
+    overallTime = sum(times) + 0.2 * length(bestpath); 
+    
+    relativeRate = packetSize / overallTime;
+    
+    % --- ВЫВОД РЕЗУЛЬТАТОВ ---
+    fprintf('\nСимуляция передачи по "наилучшему" маршруту (Baseband Mode):\n');
+    for k = 1:length(bestpath)-1
+        fprintf('Хоп от узла %d к узлу %d: SNR = %.2f дБ, BER = %.4e%%, ошибок = %d из %d бит\n', ...
+            bestpath(k), bestpath(k+1), hopSNRs(k), hopBERs(k)*100, hopErrors(k), packetSize);
+    end
+    
+    fprintf('\nОбщее число ошибок по маршруту: %d из %d бит (накоплено по хопам)\n', ...
+        totalErrors, packetSize * (length(bestpath)-1));
+    
+    avgSNR1 = mean(hopSNRs);
+    
+    fprintf('Средний SNR маршрута: %.2f дБ\n', avgSNR1);
+    fprintf('Время передачи пакета: %.3f сек\n', overallTime);
+    fprintf('Эффективная скорость передачи (с учетом ретрансляций): %.2f бит/сек\n', relativeRate);
 end
-
-totalErrors = sum(hopErrors);
-overallTime = sum(times) + 0.2 * length(bestpath) + totalDelay; 
-relativeRate = packetSize/overallTime;
-
-fprintf('\nСимуляция передачи по "наилучшему" маршруту:\n');
-for k = 1:length(bestpath)-1
-    fprintf('Хоп от узла %d к узлу %d: SNR = %.2f дБ, BER = %.4e%%, ошибок = %d из %d бит\n', ...
-        bestpath(k), bestpath(k+1), hopSNRs(k), hopBERs(k)*100, hopErrors(k), packetSize);
-end
-fprintf('\nОбщее число ошибок по маршруту: %d из %d бит (накоплено по хопам)\n', ...
-    totalErrors, packetSize * (length(bestpath)-1));
-
-avgSNR1 = mean (hopSNRs);
-
- fprintf('Время передачи пакета: %.3f сек\n', overallTime);
- fprintf('Эффективная скорость передачи: %.2f бит/сек\n', relativeRate);
     %% === Моделирование скорости передачи и оценка ошибок для наихудшего маршрута ===
+switch simulation_mode
+    case 'estimation'
+        worstpath = shortestpath(G_weight, worst_i, worst_j);
+        
+        packetSize = 240; % размер пакета в битах
+        
+        hopBERs = zeros(1, length(worstpath)-1);
+        hopSNRs = zeros(1, length(worstpath)-1);
+        hopErrors = zeros(1, length(worstpath)-1);
+        dataRate = zeros(1, length(worstpath)-1);
+        times = zeros(1, length(worstpath)-1);
+        worstlen = zeros(1, length(worstPath)-1);
+        
+        for k = 1:length(worstpath)-1
+            i1 = worstpath(k);
+            i2 = worstpath(k+1);
+            worstlen(k)=D_phys(i1,i2);
+            hopSNRs(k) = SNR(i1,i2);
+            hopBERs(k) = BER(i1,i2);
+            dataRate(k) = LoRalimit(i1,i2);
+            if dataRate(k) > 293
+                dataRate(k)=293;
+            end
+            times(k)=packetSize/dataRate(k);
+            errors = binornd(packetSize, BER(i1,i2));
+            hopErrors(k) = errors;
+        end
+        
+        totalErrors = sum(hopErrors);
+        overallTime = sum(times) + 0.2 * length(worstpath) + worstDelay; 
+        relativeRate = packetSize/overallTime;
+        
+        fprintf('\nСимуляция передачи по "наихудшему" маршруту:\n');
+        for k = 1:length(worstpath)-1
+            fprintf('Хоп от узла %d к узлу %d: SNR = %.2f дБ, BER = %.4e%%, ошибок = %d из %d бит\n', ...
+                worstpath(k), worstpath(k+1), hopSNRs(k), hopBERs(k)*100, hopErrors(k), packetSize);
+        end
+        fprintf('\nОбщее число ошибок по маршруту: %d из %d бит (накоплено по хопам)\n', ...
+            totalErrors, packetSize * (length(worstpath)-1));
+        
+         fprintf('Время передачи пакета: %.3f сек\n', overallTime);
+         fprintf('Эффективная скорость передачи: %.2f бит/сек\n', relativeRate);
+        avgSNR2 = mean (hopSNRs);
+    case 'baseband'
 
-worstpath = shortestpath(G_weight, worst_i, worst_j);
-
-packetSize = 240; % размер пакета в битах
-
-hopBERs = zeros(1, length(worstpath)-1);
-hopSNRs = zeros(1, length(worstpath)-1);
-hopErrors = zeros(1, length(worstpath)-1);
-dataRate = zeros(1, length(worstpath)-1);
-times = zeros(1, length(worstpath)-1);
-worstlen = zeros(1, length(worstPath)-1);
-
-for k = 1:length(worstpath)-1
-    i1 = worstpath(k);
-    i2 = worstpath(k+1);
-    worstlen(k)=D_phys(i1,i2);
-    hopSNRs(k) = SNR(i1,i2);
-    hopBERs(k) = BER(i1,i2);
-    dataRate(k) = LoRalimit(i1,i2);
-    if dataRate(k) > 293
-        dataRate(k)=293;
-    end
-    times(k)=packetSize/dataRate(k);
-    errors = binornd(packetSize, BER(i1,i2));
-    hopErrors(k) = errors;
+        worstpath = shortestpath(G_weight, worst_i, worst_j);
+                
+        packetSize = 240; % размер пакета в битах
+        
+        % --- Предварительный расчет физики LoRa для данного пакета ---
+        coded_bits = packetSize * (8/4); % CR = 4 (расширение в 2 раза)
+        payload_sym = ceil(coded_bits / cfg.SF); 
+        total_sym = cfg.Preamble + payload_sym; % Преамбула + данные
+        
+        T_sym = (2^cfg.SF) / cfg.BW;     % Время одного символа
+        ToA_seconds = total_sym * T_sym; % Строгое время пакета в эфире
+        % -------------------------------------------------------------
+        
+        % Инициализация массивов
+        hopBERs = zeros(1, length(worstpath)-1);
+        hopSNRs = zeros(1, length(worstpath)-1);
+        hopErrors = zeros(1, length(worstpath)-1);
+        dataRate = zeros(1, length(worstpath)-1);
+        times = zeros(1, length(worstpath)-1);
+        worstlen = zeros(1, length(worstpath)-1); % Исправлена опечатка (было worstPath)
+        
+        % Настройка FEC
+        if cfg.CR == 0
+            cfg.FEC = false;
+        else
+            cfg.FEC = true;
+        end
+        
+        for k = 1:length(worstpath)-1
+            i1 = worstpath(k);
+            i2 = worstpath(k+1);
+            
+            % Сохраняем физическую дистанцию (как было в вашем коде)
+            worstlen(k) = D_phys(i1,i2); 
+            
+            % 1. Расчет SNR
+            hopSNR = SNR(i1,i2);
+            hopSNRs(k) = hopSNR;
+            
+            % 2. BASEBAND СИМУЛЯЦИЯ (на лету)
+            % --- TX ---
+            [tx, data_tx, Nsym_tx] = LoRa_tx(cfg);
+            
+            % --- CHANNEL ---
+            rx = channel(tx, cfg, hopSNR);
+            
+            % --- RX ---
+            [current_BER, ~] = LoRa_rx(rx, data_tx, cfg, Nsym_tx);
+            hopBERs(k) = current_BER;
+            
+            % 3. Биномиальное распределение ошибок для пакета
+            hopErrors(k) = binornd(packetSize, current_BER);
+            
+            % 4. Задержки и скорости
+            dist = norm(nodes(i1,:) - nodes(i2,:));
+            propDelay = dist / c; % Задержка распространения радиоволны
+            
+            currentRate = packetSize / ToA_seconds; 
+            dataRate(k) = currentRate; 
+            
+            % Время на хопе = Время в эфире + Задержка распространения
+            times(k) = ToA_seconds + propDelay; 
+        end
+        
+        totalErrors = sum(hopErrors);
+        
+        % Общее время. (Переменная worstDelay убрана, т.к. propDelay теперь учтена внутри times(k))
+        overallTime = sum(times) + 0.2 * length(worstpath); 
+        relativeRate = packetSize / overallTime;
+        
+        avgSNR2 = mean(hopSNRs);
+        
+        % --- ВЫВОД РЕЗУЛЬТАТОВ ---
+        fprintf('\nСимуляция передачи по "наихудшему" маршруту (Baseband Mode):\n');
+        for k = 1:length(worstpath)-1
+            fprintf('Хоп от узла %d к узлу %d: SNR = %.2f дБ, BER = %.4e%%, ошибок = %d из %d бит\n', ...
+                worstpath(k), worstpath(k+1), hopSNRs(k), hopBERs(k)*100, hopErrors(k), packetSize);
+        end
+        
+        fprintf('\nОбщее число ошибок по маршруту: %d из %d бит (накоплено по хопам)\n', ...
+            totalErrors, packetSize * (length(worstpath)-1));
+        
+        fprintf('Средний SNR маршрута: %.2f дБ\n', avgSNR2);
+        fprintf('Время передачи пакета: %.3f сек\n', overallTime);
+        fprintf('Эффективная скорость передачи: %.2f бит/сек\n', relativeRate);
 end
-
-totalErrors = sum(hopErrors);
-overallTime = sum(times) + 0.2 * length(worstpath) + worstDelay; 
-relativeRate = packetSize/overallTime;
-
-fprintf('\nСимуляция передачи по "наихудшему" маршруту:\n');
-for k = 1:length(worstpath)-1
-    fprintf('Хоп от узла %d к узлу %d: SNR = %.2f дБ, BER = %.4e%%, ошибок = %d из %d бит\n', ...
-        worstpath(k), worstpath(k+1), hopSNRs(k), hopBERs(k)*100, hopErrors(k), packetSize);
-end
-fprintf('\nОбщее число ошибок по маршруту: %d из %d бит (накоплено по хопам)\n', ...
-    totalErrors, packetSize * (length(worstpath)-1));
-
- fprintf('Время передачи пакета: %.3f сек\n', overallTime);
- fprintf('Эффективная скорость передачи: %.2f бит/сек\n', relativeRate);
-avgSNR2 = mean (hopSNRs);
-
 %% Визуализация
 
 
@@ -647,11 +924,10 @@ function [X, Y, Z] = create_toroidal_pattern(center, orientation, radius, res)
     Z = center(3) + x_axis(3)*x_loc + y_axis(3)*y_loc + z_axis(3)*z_loc;
 end
 %% Функция для шума и BER
-function [SNR_dB, BER, C_shannon, Rb] = linkMetrics_LoRa_BER(P_rx_dBm, BW_Hz, SF, CASE, R)
+function [SNR_dB, BER, C_shannon, Rb] = linkMetrics_LoRa_BER(P_rx_dBm, BW_Hz, SF, R)
     % LoRa-ориентированная модель BER с учетом чувствительности и SNR-порогов
      NF_dB = 6;
-switch CASE
-    case 1
+
         k = 1.38064852e-23;
         T = 290;
         F = 10^(NF_dB/10);
@@ -686,35 +962,7 @@ switch CASE
                 BER(i) = 0.01 * exp(-0.6 * margin / R);  % эмпирическая зависимость
             end
         end
-    case 2
-       
-        % P_rx_dBm — вектор мощностей на входе, дБм (Nx1)
-        N = numel(P_rx_dBm);
-        % 1) средняя шумовая мощность
-        k = 1.38064852e-23;    % Дж/К
-        T = 290;               % К
-        F = 10^(NF_dB/10);     % линеаризованный NF
-        Pn_mean = k * T * BW_Hz * F;  % средняя в ваттах
-    
-        % 2) генерируем AWGN (комплексный) для каждого узла
-        sigma = sqrt(Pn_mean/2);
-        noise_I = sigma * randn(N,1);
-        noise_Q = sigma * randn(N,1);
-        noise_W = noise_I.^2 + noise_Q.^2;
-    
-        % 3) переводим в дБм и считаем SNR
-        Pn_dBm = 10*log10(noise_W*1e3);
-        SNR_dB = P_rx_dBm(:) - Pn_dBm;
-        SNR_lin = 10.^(SNR_dB/10);
-    
-        % 4) SER и BER для CSS (прибл.)
-        M = 2^SF;
-        SER = qfunc( sqrt(2 * SNR_lin * SF / M) );
-        BER = SER ./ (SF * R);
-end
-
+  
     C_shannon  = BW_Hz * log2(1 + SNR_lin);  % [бит/с]
     Rb = (BW_Hz/2^SF) * SF * R;  % [бит/с]
-
-
 end

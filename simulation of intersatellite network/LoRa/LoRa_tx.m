@@ -8,6 +8,10 @@ function [tx, data_tx, Nsym_tx] = LoRa_tx(cfg)
     t = (0:Ns-1)/Fs;
     base_chirp = exp(1j*2*pi*(-BW/2*t + BW/(2*Ts)*t.^2));
     
+    if ~isfield(cfg, 'graph')
+        cfg.graph = false;
+    end
+
     if cfg.FEC
         % Целевое количество данных (чтобы получить примерно Nsym символов)
         target_data_bits = floor(cfg.Nsym * 4 * SF / (4 + cfg.CR));

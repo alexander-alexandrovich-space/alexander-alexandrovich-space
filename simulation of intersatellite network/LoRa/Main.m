@@ -4,7 +4,7 @@ clear; clc;close all;
 cfg.SF = 12;
 cfg.BW = 125e3;
 cfg.Fc = 868e6;      % безопасно для Fs=1e6
-cfg.Nsym = 300;
+cfg.Nsym = 100;
 cfg.Preamble = 8;
 cfg.graph = false;
 cfg.FEC = true;
