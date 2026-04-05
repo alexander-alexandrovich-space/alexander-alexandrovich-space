@@ -4,19 +4,19 @@ clear; clc;close all;
 cfg.SF = 12;
 cfg.BW = 125e3;
 cfg.Fc = 868e6;      % безопасно для Fs=1e6
-cfg.Nsym = 100;
+cfg.Nsym = 300;
 cfg.Preamble = 8;
 cfg.graph = false;
-cfg.FEC = true;
+cfg.FEC = false;
 Niter = 100;          % количество итераций на каждую точку
 
 rng(42);
 
 %cfg.DopplerHz = 5;
 
-CR_modes = [0 4];
+SF_modes = [7 8 9 10 11 12];
 
-legend_str = cell(1, length(CR_modes));
+legend_str = cell(1, length(SF_modes));
 figure(1); hold on; grid on; title('LoRa BER curve'); xlabel('SNR (dB)'); ylabel('BER'); set(gca, 'YScale', 'log');
 figure(2); hold on; grid on; title('LoRa BLER curve'); xlabel('SNR (dB)'); ylabel('BLER'); set(gca, 'YScale', 'log');
 
@@ -29,15 +29,10 @@ cfg.ChannelType = 'AWGN';
 
 % LOOP OVER SNR
 
-for CR_id = 1:length(CR_modes)
-cfg.CR = CR_modes(CR_id);
-    if cfg.CR == 0
-        cfg.FEC = false;
-        legend_str{CR_id} = 'No FEC';
-    else
-        cfg.FEC = true;
-        legend_str{CR_id} = ['FEC, CR = ', num2str(cfg.CR)];
-    end
+for SF_id = 1:length(SF_modes)
+cfg.SF = SF_modes(SF_id);
+   
+        legend_str{SF_id} = ['NOFEC, SF = ', num2str(cfg.SF)];
 
     BER_curve  = zeros(size(SNRdB));
     BLER_curve = zeros(size(SNRdB));

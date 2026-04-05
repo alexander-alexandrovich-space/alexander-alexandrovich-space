@@ -22,7 +22,7 @@ function bits = LoRa_Hamming_dec(coded, CR)
         syndrome = s1 + 2*s2 + 4*s3;
         
         % Коррекция ошибок (только если CR >= 3)
-        if CR >= 3 && syndrome ~= 0
+        if syndrome ~= 0
             switch syndrome
                 case 3
                     d(1) = ~d(1);
