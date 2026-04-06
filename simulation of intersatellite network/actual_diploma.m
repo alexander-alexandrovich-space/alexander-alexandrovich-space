@@ -4,45 +4,44 @@ clc; clear; close all;
 txPower = 20;                % Передаточная мощность (dBm)
 sensitivity = -137;          % Чувствительность приемника (dBm)
 freq = 868e6;                % Частота передачи (868 MHz)
-Gtx=2;
-Grx=2;
+Gtx=2; % усиление передающей антенны в dBi
+Grx=2; % усиление приемной антенны в dBi
 
 
-c=3e8;
-SF =12;
-BW = 125000;
+c=3e8; % скорость света
+SF =12; % Spreading Factor
+BW = 125000; % Ширина полосы
 
-CodeRateFec = 4/8;
+CodeRateFec = 4/8; % кодовая скорость 
 CodeRateNoFec = 1;
 
 CODERATE=CodeRateFec;
 
-rng(42); % сид
+rng(42); % сид 
 
 mu = 3.986004418e14;    % Гравитационный параметр Земли, м^3/с^2
 R_earth = 6400000;      % Радиус Земли, м
 
 r_orbits = [(160000+2200000)/2+6400000];  %  орбитальные радиусы (м)
 
-% Задаем время симуляции (секундах)
-t = 100;  % например, через 1000 секунд после начального момента
+t = 100;  % Задаем время симуляции (секундах)
 
-simulation_mode = 'baseband'; % 'baseband' 
+simulation_mode = 'baseband'; % выбор режима: оценка или baseband
 
 
 cfg.SF = 12;
 cfg.BW = 125e3;
 cfg.Fc = 868e6;      
-cfg.Nsym = 1; % 240 * 2 /12 +8
+cfg.Nsym = 1; 
 cfg.Preamble = 8;
 cfg.CR = 4;
 cfg.FEC = true;
-Niter = 1;          % количество итераций на каждую точку
+Niter = 1;          % количество итераций усреднения
 cfg.ChannelType = 'AWGN';
 
 numPerOrbit = 28;  % число спутников на каждой орбите
 
-addpath("LoRa");
+addpath("LoRa"); % подключение baseband модели
 
 
 %% === Параметры размещения спутников ===
@@ -150,10 +149,9 @@ for m=1:10%m=1:round(2*pi*6560000/1500000)
         end
     end
 end
-%% ===============Задание количества узлов в сети=============
 numNodes= length(satellites);
 
-%% ============= Присвоение позиций================
+%% === Присвоение позиций ===
 nodes = zeros(length(satellites), 3);
 for i = 1:length(satellites)
     nodes(i, :) = [satellites(i).x, satellites(i).y, satellites(i).z];
@@ -180,9 +178,7 @@ for i = 1:numNodes
     v_dir = vel / norm(vel);
     
     v_dir = v_dir / norm(v_dir);
-    
-    % phi = 2*pi*rand();   % случайный угол [0, 2π)
-    % 
+
      %  Находим вектор в плоскости орбиты, перпендикулярный радиальному
         perp_vec = cross(normal, v_dir);
         perp_vec = perp_vec / norm(perp_vec);
@@ -192,16 +188,7 @@ for i = 1:numNodes
         % Делаем его перпендикулярным v_dir
         temp = tmp - perp_vec*(perp_vec.'*tmp);
         temp = temp / norm(temp);
-    % 
-    %     % Преобразуем базис: [v_dir, perp_vec, n_vec] -> [x,y,z]
-    %     M = [ v_dir perp_vec normal];
-    % 
-    %     % Поворачиваем вектор ориентации
-    %     rotated_orient_local =  [0; 0; 1];  
-    % 
-    %     % Запоминаем ориентацию антенны
-    %     satellites(i).antennaOrient = M * rotated_orient_local;
-
+  
         satellites(i).antennaOrient = perp_vec;
 end
 
@@ -285,6 +272,7 @@ switch simulation_mode
            BER_all = zeros(numNodes);
 
             payload_bits = 240;
+
          % Расчет времени в эфире (ToA)
             coded_bits = payload_bits * (8/4); % CR = 4
             payload_sym = ceil(coded_bits / cfg.SF); 
@@ -345,7 +333,6 @@ switch simulation_mode
                     W(i, j) = totalDelay;
                     W(j, i) = totalDelay;
                 else
-                    % Повредился хотя бы 1 бит (или больше). Пакет потерян.
                     connections(i,j) = 0;
                     connections(j,i) = 0;
                     W(i, j) = inf;
@@ -368,7 +355,7 @@ for i = 1:numNodes
         if i == j, continue; end % Пропускаем сравнение с собой
         if connections(i,j)==1
             satellites(i).isIsolated = false;
-            break; % Прерываем цикл при первой найденной связи
+            break; 
         end
     end
     if satellites(i).isIsolated == true
@@ -382,7 +369,7 @@ disp(isolatedNodes);
 
 
 G = graph(connections);
-components = conncomp(G);  % components(i) содержит номер компоненты для узла i
+components = conncomp(G);  
 numComponents = max(components);
 
 
@@ -419,11 +406,6 @@ for i = 1:numNodes
     end
 end
 
-%
-%best_i=1;
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-%best_j=500;
-%
 
 if best_i == 0 || best_j == 0
     fprintf('Не найдено пары узлов с существующим маршрутом.\n');
@@ -518,7 +500,6 @@ switch simulation_mode
     packetSize = 240; % размер пакета в битах
     
     % --- Предварительный расчет физики LoRa для данного пакета ---
-    % Настройки для чистой модели (без SyncWord и скрытых заголовков)
     coded_bits = packetSize * (8/4); % CR = 4 (расширение в 2 раза)
     payload_sym = ceil(coded_bits / cfg.SF); 
     total_sym = cfg.Preamble + payload_sym; % 8 преамбула + данные
@@ -546,8 +527,6 @@ switch simulation_mode
         i2 = bestpath(k+1);
         
         % 1. Расчет SNR для текущего хопа
-        % Предполагается, что матрица rxPower и Pn_dBm уже посчитаны ранее. 
-        % Если нет, можно пересчитать rxPower через txPower и attenuation.
         hopSNR = SNR(i1,i2);
         hopSNRs(k) = hopSNR;
         
@@ -736,7 +715,7 @@ switch simulation_mode
         fprintf('Время передачи пакета: %.3f сек\n', overallTime);
         fprintf('Эффективная скорость передачи: %.2f бит/сек\n', relativeRate);
 end
-%% Визуализация
+%% === Визуализация ===
 
 
 figure; hold on; grid on; axis equal;
@@ -854,7 +833,7 @@ end
 
 
 
-%% ЗЕМЛЯ
+%% === ЗЕМЛЯ ===
 % Параметры Земли
 radius = 6400000; % Радиус в метрах
 
@@ -889,8 +868,7 @@ set(gca, 'Color', 'none') % сделать фон области графика 
 set(gcf, 'Color', 'none') % сделать фон всей фигуры прозрачным
 box off                   % отключить рамку вокруг графика
 
-%% Функции
-%% Вспомогательная функция для создания тороидальной диаграммы
+%% === Вспомогательная функция для создания тороидальной диаграммы ===
 function [X, Y, Z] = create_toroidal_pattern(center, orientation, radius, res)
     % Создаем сферические координаты
     [theta, phi] = meshgrid(linspace(0, 2*pi, res), linspace(0, pi, res));
@@ -923,7 +901,7 @@ function [X, Y, Z] = create_toroidal_pattern(center, orientation, radius, res)
     Y = center(2) + x_axis(2)*x_loc + y_axis(2)*y_loc + z_axis(2)*z_loc;
     Z = center(3) + x_axis(3)*x_loc + y_axis(3)*y_loc + z_axis(3)*z_loc;
 end
-%% Функция для шума и BER
+%% === Функция для шума и BER ===
 function [SNR_dB, BER, C_shannon, Rb] = linkMetrics_LoRa_BER(P_rx_dBm, BW_Hz, SF, R)
     % LoRa-ориентированная модель BER с учетом чувствительности и SNR-порогов
      NF_dB = 6;
